@@ -1,0 +1,82 @@
+.
+├── data/
+│   ├── competency-catalog.csv
+│   ├── krm-v3.0.xlsx
+│   ├── README.md
+│   └── role-competency-matrix.csv
+├── docs/
+│   ├── final-assessment.md
+│   ├── krm-mapping.md
+│   ├── krm-reference.md
+│   ├── measurement-model.md
+│   ├── quality-checklist.md
+│   ├── README.md
+│   └── rpd.md
+├── Exam/
+│   ├── attachments/
+│   │   └── .gitkeep
+│   └── README.md
+├── M1-module-name/
+│   ├── attachments/
+│   │   └── .gitkeep
+│   ├── kim-01-practical-work.md
+│   ├── README.md
+│   └── rubric-01.md
+├── M2-module-name/
+│   ├── attachments/
+│   │   └── .gitkeep
+│   ├── kim-01-practical-work.md
+│   ├── kim-01-template.md
+│   └── README.md
+├── methodical-guidelines/
+│   ├── students/
+│   │   └── README.md
+│   ├── teachers-assessment/
+│   │   └── README.md
+│   ├── teachers-resources/
+│   │   └── README.md
+│   └── README.md
+├── other/
+│   └── README.md
+├── Project/
+│   ├── attachments/
+│   │   └── .gitkeep
+│   └── README.md
+├── resources/
+│   ├── benchmarks/
+│   │   └── README.md
+│   ├── datasets/
+│   │   └── README.md
+│   ├── llm-prompts/
+│   │   └── README.md
+│   ├── other/
+│   │   └── README.md
+│   ├── papers/
+│   │   └── README.md
+│   ├── problem-banks/
+│   │   └── README.md
+│   ├── software/
+│   │   └── python-libs/
+│   │       └── README.md
+│   ├── test-banks/
+│   │   └── README.md
+│   ├── textbooks/
+│   │   └── README.md
+│   └── README.md
+├── team/
+│   ├── images/
+│   │   └── .gitkeep
+│   └── README.md
+├── templates/
+│   ├── kim-template.md
+│   ├── README.md
+│   ├── resource-card-template.md
+│   └── rubric-template.md
+├── tools/
+│   ├── README.md
+│   └── validate_repository.py
+├── .gitignore
+├── CONTRIBUTING.md
+├── LICENSE.md
+├── README.md
+└── validation-report.txt
