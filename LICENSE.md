@@ -5,8 +5,8 @@
 
 Материалы репозитория (рабочая программа дисциплины, описания КИМ, рубрики,
 методические указания, каталог ресурсов) распространяются на условиях лицензии
-**Creative Commons Attribution 4.0 International (CC BY 4.0)**:
-https://creativecommons.org/licenses/by/4.0/deed.ru
+**Creative Commons Attribution 4.0 International (CC BY 4.0)** —
+см. текст лицензии на https://creativecommons.org/licenses/by/4.0/deed.ru.
 
 Лицензия разрешает использование, распространение и изменение материалов, в том
 числе в коммерческих целях, при обязательном указании авторов и источника.
