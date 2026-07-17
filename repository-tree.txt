@@ -1,45 +1,71 @@
 .
-├── data/
-│   ├── competency-catalog.csv
-│   ├── krm-v3.0.xlsx
-│   ├── README.md
-│   └── role-competency-matrix.csv
-├── docs/
-│   ├── quality-checklist.md
-│   ├── README.md
-│   ├── repository_example.pdf
-│   └── rpd.md
 ├── Exam/
-│   ├── attachments/
-│   │   └── .gitkeep
-│   └── README.md
-├── M1-module-name/
-│   ├── attachments/
-│   │   └── .gitkeep
-│   ├── kim-01-practical-work.md
 │   ├── README.md
-│   └── rubric-01.md
-├── M2-module-name/
+│   ├── kim-exam.md
+│   ├── rubric-exam.md
 │   ├── attachments/
-│   │   └── .gitkeep
-│   ├── kim-01-practical-work.md
-│   ├── kim-01-template.md
-│   └── README.md
+├── M1-neuron-basics/
+│   ├── README.md
+│   ├── kim-01-neuron-perceptron.md
+│   ├── rubric-01.md
+│   ├── attachments/
+├── M2-training/
+│   ├── README.md
+│   ├── kim-01-backprop-training.md
+│   ├── rubric-01.md
+│   ├── attachments/
+├── M3-dense-networks/
+│   ├── README.md
+│   ├── kim-01-mlp.md
+│   ├── rubric-01.md
+│   ├── attachments/
+├── M4-cnn/
+│   ├── README.md
+│   ├── kim-01-cnn.md
+│   ├── rubric-01.md
+│   ├── attachments/
+├── M5-sequences/
+│   ├── README.md
+│   ├── kim-01-sequences.md
+│   ├── rubric-01.md
+│   ├── attachments/
+├── M6-autoencoders/
+│   ├── README.md
+│   ├── kim-01-autoencoders.md
+│   ├── rubric-01.md
+│   ├── attachments/
+├── M7-optimizers/
+│   ├── README.md
+│   ├── kim-01-optimizers.md
+│   ├── rubric-01.md
+│   ├── attachments/
+├── Project/
+│   ├── README.md
+│   ├── kim-project.md
+│   ├── rubric-project.md
+│   ├── attachments/
+├── data/
+│   ├── README.md
+│   └── krm-v3.0.xlsx
+├── docs/
+│   ├── README.md
+│   ├── fill-plan.md
+│   ├── kim-format-options.md
+│   ├── quality-checklist.md
+│   └── rpd.md
 ├── methodical-guidelines/
+│   ├── README.md
 │   ├── students/
 │   │   └── README.md
 │   ├── teachers-assessment/
 │   │   └── README.md
 │   ├── teachers-resources/
 │   │   └── README.md
-│   └── README.md
 ├── other/
-│   └── README.md
-├── Project/
-│   ├── attachments/
-│   │   └── .gitkeep
-│   └── README.md
+│   ├── README.md
+│   └── РПД_ОНС.docx
 ├── resources/
+│   ├── README.md
 │   ├── benchmarks/
 │   │   └── README.md
 │   ├── datasets/
@@ -53,22 +79,12 @@
 │   ├── problem-banks/
 │   │   └── README.md
 │   ├── software/
-│   │   └── python-libs/
-│   │       └── README.md
+│   │   ├── python-libs/
+│   │   │   └── README.md
 │   ├── test-banks/
 │   │   └── README.md
 │   ├── textbooks/
 │   │   └── README.md
-│   └── README.md
 ├── team/
-│   ├── images/
-│   │   └── .gitkeep
-│   └── README.md
-├── tools/
 │   ├── README.md
-│   └── validate_repository.py
-├── .gitignore
-├── CONTRIBUTING.md
-├── LICENSE.md
-├── README.md
-└── validation-report.txt
+│   ├── images/
