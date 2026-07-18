@@ -13,12 +13,18 @@
 | A | Структура 7 модулей | ✅ готово |
 | B | РПД, README с моделью измерения, LICENSE | ✅ готово |
 | C | КИМ 7 модулей — README, MD-описания, рубрики | ✅ готово |
-| C (ноутбуки) | Ноутбуки-задания `attachments/kim-NN-*.ipynb` и эталоны | ⏳ следующий шаг |
+| C (ноутбуки) | Ноутбуки-задания `attachments/kim-NN-*.ipynb` | ✅ готово (7 шт.) |
+| C (эталоны) | Эталонные решения `attachments/kim-NN-*-solution.ipynb` | ⏳ следующий шаг |
 | D | Project + Exam — КИМ и рубрики | ✅ готово |
 | E | Методические указания | ✅ готово |
 | F | Каталог ресурсов (9 разделов) | ✅ готово |
 | G | Проверка по quality-checklist | ✅ пройдена |
 | **H** | **Сверка с программой УрФУ**: роли, уровни, шкала БРС, форма аттестации, часы | ✅ выполнено |
+
+**Ноутбуки-задания** созданы (`nbformat.validate` пройден) на основе материалов
+`dlpython_course`, формат — теория + ячейки `# < ENTER YOUR CODE HERE >` по
+образцу `examples/lab-regression-features.ipynb`. Сборщик — `tools/nb_builder.py`
++ `tools/build_m{1..7}.py` (идемпотентные, можно перегенерировать).
 
 **Применены данные из программ УрФУ** (`/home/sheka/w/itmo2/programm/`):
 - Роли: ML Engineer + Data Analyst (АИИ); ML Engineer + Data Engineer + MLOps (ПИИ).
