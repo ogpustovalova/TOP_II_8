@@ -7,7 +7,7 @@
 |---|---|---|
 | Учебники | [textbooks](textbooks/README.md) | базовые и дополнительные учебные материалы |
 | Научные статьи | [papers](papers/README.md) | классические и современные работы по DL |
-| Банки тестов | [test-banks](test-banks/README.md) | текущий и рубежный контроль (терминология, формулы) |
+| Банки тестов | [test-banks](test-banks/README.md) | варианты и ключи рубежных срезов К1/К2 |
 | Банки задач | [problem-banks](problem-banks/README.md) | практические, расчётные и кейсовые задания |
 | Датасеты | [datasets](datasets/README.md) | учебные и проектные данные |
 | Бенчмарки | [benchmarks](benchmarks/README.md) | сравнение методов и оценка качества |
