@@ -1,169 +1,492 @@
-"""Эталонное решение КИМ 4.1 — Сверточные сети и перенос обучения."""
+"""Эталонное решение КИМ 4.1 на PyTorch: CNN и перенос обучения."""
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
-from nb_builder import Notebook, md, code, sol, solution_header
+from nb_builder import Notebook, md, sol, solution_header
+
 
 nb = Notebook("КИМ 4.1 — эталон")
-nb.add(solution_header("КИМ 4.1. Сверточные сети и перенос обучения", "kim-04-cnn.ipynb"))
+nb.add(solution_header("КИМ 4.1. Сверточные сети и перенос обучения",
+                       "kim-04-cnn.ipynb"))
 
 # === Часть А. Свёртка с нуля ===
-nb.add(md("---\n## Часть А. Свёртка с нуля"))
-nb.add(md("### 0. Импорт"))
-nb.add(sol("""import numpy as np
+nb.add(md("""---
+## Часть А. Свёртка с нуля
+
+Для одноканального изображения операция двумерной свёртки (точнее,
+кросс-корреляции, как в большинстве DL-библиотек) имеет вид
+
+$$ (I \\star K)[i,j] = \\sum_m \\sum_n I[i+m,j+n]K[m,n]. $$
+
+Размер выхода равен
+$H_{out}=\\lfloor(H_{in}-K+2P)/S\\rfloor+1$ (аналогично для ширины)."""))
+nb.add(md("### 0. Импорт библиотек, выбор устройства и фиксация seed"))
+nb.add(sol("""import copy
+import os
+import random
+import time
+
 import matplotlib.pyplot as plt
-%matplotlib inline"""))
+import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, Subset
+from torchvision import datasets, transforms
+from torchvision.models import ResNet18_Weights, resnet18
+from torchvision.transforms import InterpolationMode
 
-nb.add(md("### 1. Реализация conv2d"))
+%matplotlib inline
+
+SEED = 42
+
+def seed_everything(seed=SEED):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    # Детерминированность удобна для учебного эксперимента, хотя немного замедляет GPU.
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+seed_everything()
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print('Устройство:', device)
+if device.type == 'cuda':
+    print('GPU:', torch.cuda.get_device_name(0))
+else:
+    print('Предупреждение: на CPU полный эксперимент займёт заметно больше 15 минут.')"""))
+
+nb.add(md("""### 1. Реализация `conv2d` на NumPy
+
+Функция ниже намеренно использует циклы: это прозрачная реализация формулы, а
+не быстрый вариант для обучения сети."""))
 nb.add(sol("""def conv2d(image, kernel, stride=1, padding=0):
-    # image: (H, W), kernel: (K, K)
-    if padding > 0:
+    image = np.asarray(image)
+    kernel = np.asarray(kernel)
+    if image.ndim != 2 or kernel.ndim != 2:
+        raise ValueError('image и kernel должны быть двумерными')
+    if stride <= 0 or padding < 0:
+        raise ValueError('stride должен быть > 0, padding должен быть >= 0')
+
+    if padding:
         image = np.pad(image, padding, mode='constant')
-    H, W = image.shape
-    K, _ = kernel.shape
-    H_out = (H - K) // stride + 1
-    W_out = (W - K) // stride + 1
-    out = np.zeros((H_out, W_out))
-    for i in range(H_out):
-        for j in range(W_out):
-            region = image[i*stride:i*stride+K, j*stride:j*stride+K]
-            out[i, j] = np.sum(region * kernel)
-    return out
+    height, width = image.shape
+    kernel_height, kernel_width = kernel.shape
+    out_height = (height - kernel_height) // stride + 1
+    out_width = (width - kernel_width) // stride + 1
+    if out_height <= 0 or out_width <= 0:
+        raise ValueError('ядро больше дополненного изображения')
 
-# Проверка
-img = np.random.rand(5, 5)
-kern = np.array([[1, 0, -1], [1, 0, -1], [1, 0, -1]])  # вертикальный контур
-print('Вход 5x5, ядро 3x3, stride=1, padding=0 ->', conv2d(img, kern).shape, '(должно быть 3x3)')"""))
+    output = np.empty((out_height, out_width), dtype=np.result_type(image, kernel))
+    for row in range(out_height):
+        for col in range(out_width):
+            patch = image[
+                row * stride:row * stride + kernel_height,
+                col * stride:col * stride + kernel_width,
+            ]
+            output[row, col] = np.sum(patch * kernel)
+    return output
 
-nb.add(md("### 2. Влияние параметров"))
-nb.add(sol("""from tensorflow import keras
-(x_train, _), _ = keras.datasets.cifar10.load_data()
-sample = x_train[0, :, :, 0].astype('float32') / 255.0  # один канал
+# Небольшая проверка на ядре, выделяющем вертикальные границы.
+image_5x5 = np.arange(25, dtype=np.float32).reshape(5, 5)
+vertical_kernel = np.array([[1, 0, -1],
+                            [1, 0, -1],
+                            [1, 0, -1]], dtype=np.float32)
+result = conv2d(image_5x5, vertical_kernel)
+print('Форма результата:', result.shape, '(ожидается (3, 3))')
+print(result)"""))
+
+nb.add(md("### 2. Влияние размера ядра, шага и дополнения"))
+nb.add(sol("""sample = np.random.default_rng(SEED).random((32, 32), dtype=np.float32)
+experiments = [
+    ('kernel=3, stride=1, padding=0', np.ones((3, 3)), 1, 0, (30, 30)),
+    ('kernel=5, stride=1, padding=0', np.ones((5, 5)), 1, 0, (28, 28)),
+    ('kernel=3, stride=2, padding=0', np.ones((3, 3)), 2, 0, (15, 15)),
+    ('kernel=3, stride=1, padding=1', np.ones((3, 3)), 1, 1, (32, 32)),
+]
 
 print('Размер входа:', sample.shape)
-print('kernel=3, stride=1, pad=0:', conv2d(sample, np.ones((3,3))).shape, '(30x30)')
-print('kernel=5, stride=1, pad=0:', conv2d(sample, np.ones((5,5))).shape, '(28x28)')
-print('kernel=3, stride=2, pad=0:', conv2d(sample, np.ones((3,3)), stride=2).shape, '(15x15)')
-print('kernel=3, stride=1, pad=1:', conv2d(sample, np.ones((3,3)), padding=1).shape, '(32x32 — same)')"""))
+for name, kernel, stride, padding, expected_shape in experiments:
+    actual_shape = conv2d(sample, kernel, stride=stride, padding=padding).shape
+    print(f'{name}: {actual_shape}, по формуле: {expected_shape}')
+    assert actual_shape == expected_shape"""))
 
 # === Часть Б. CNN на CIFAR-10 ===
-nb.add(md("---\n## Часть Б. Собственная CNN на CIFAR-10"))
-nb.add(md("### 3. Загрузка и подготовка"))
-nb.add(sol("""import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
+nb.add(md("""---
+## Часть Б. Собственная CNN на CIFAR-10
 
-tf.random.set_seed(42)
-(x_train, y_train), (x_test, y_test) = keras.datasets.cifar10.load_data()
-x_train = x_train.astype('float32') / 255.0
-x_test  = x_test.astype('float32') / 255.0
-print(x_train.shape, y_train.shape)"""))
+CIFAR-10 содержит 50 000 обучающих и 10 000 тестовых RGB-изображений 32×32.
+Обучающую часть делим на 45 000/5 000 объектов. Тестовая выборка не участвует
+ни в подборе модели, ни в выборе лучшей эпохи."""))
+nb.add(md("### 3. CIFAR-10, преобразования и `DataLoader`"))
+nb.add(sol("""DATA_ROOT = './data'
+BATCH_SIZE = 128
+NUM_WORKERS = min(4, os.cpu_count() or 1)
+PIN_MEMORY = device.type == 'cuda'
 
-nb.add(md("### 4. Архитектура CNN в стиле VGG"))
-nb.add(sol("""def build_cnn():
-    return keras.Sequential([
-        layers.Input((32, 32, 3)),
-        layers.Conv2D(32, 3, padding='same', activation='relu'),
-        layers.Conv2D(32, 3, padding='same', activation='relu'),
-        layers.MaxPooling2D(),
-        layers.Dropout(0.25),
-        layers.Conv2D(64, 3, padding='same', activation='relu'),
-        layers.Conv2D(64, 3, padding='same', activation='relu'),
-        layers.MaxPooling2D(),
-        layers.Dropout(0.25),
-        layers.Flatten(),
-        layers.Dense(512, activation='relu'),
-        layers.Dropout(0.5),
-        layers.Dense(10, activation='softmax'),
-    ])
-model = build_cnn()
-model.summary()"""))
+# Статистики именно CIFAR-10. Аугментации применяются только к train.
+CIFAR_MEAN = (0.4914, 0.4822, 0.4465)
+CIFAR_STD = (0.2470, 0.2435, 0.2616)
+train_transform = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
+])
+eval_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
+])
 
-nb.add(md("### 5. Обучение"))
-nb.add(sol("""model.compile(loss='sparse_categorical_crossentropy',
-              optimizer='adam', metrics=['accuracy'])
-history = model.fit(x_train, y_train, batch_size=128, epochs=20,
-                    validation_split=0.2, verbose=2)
-test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
-print(f'\\nТестовая точность собственной CNN: {test_acc:.4f}')  # ~0.70-0.75"""))
+# Два объекта одного train-набора нужны, чтобы val не получал случайные аугментации.
+train_aug_dataset = datasets.CIFAR10(DATA_ROOT, train=True, download=True,
+                                     transform=train_transform)
+train_eval_dataset = datasets.CIFAR10(DATA_ROOT, train=True, download=False,
+                                      transform=eval_transform)
+test_dataset = datasets.CIFAR10(DATA_ROOT, train=False, download=True,
+                                transform=eval_transform)
 
-nb.add(md("### 6. Кривые обучения"))
-nb.add(sol("""fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-ax[0].plot(history.history['loss'], label='train'); ax[0].plot(history.history['val_loss'], label='val')
-ax[0].set_title('Loss'); ax[0].legend(); ax[0].grid(True)
-ax[1].plot(history.history['accuracy'], label='train'); ax[1].plot(history.history['val_accuracy'], label='val')
-ax[1].set_title('Accuracy'); ax[1].legend(); ax[1].grid(True)
-plt.tight_layout(); plt.show()"""))
+split_generator = torch.Generator().manual_seed(SEED)
+indices = torch.randperm(len(train_aug_dataset), generator=split_generator).tolist()
+train_indices, val_indices = indices[:45_000], indices[45_000:]
+train_dataset = Subset(train_aug_dataset, train_indices)
+val_dataset = Subset(train_eval_dataset, val_indices)
+
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % (2 ** 32)
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+def make_loader(dataset, batch_size, shuffle):
+    generator = torch.Generator().manual_seed(SEED)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=NUM_WORKERS,
+        pin_memory=PIN_MEMORY,
+        persistent_workers=NUM_WORKERS > 0,
+        worker_init_fn=seed_worker,
+        generator=generator,
+    )
+
+train_loader = make_loader(train_dataset, BATCH_SIZE, shuffle=True)
+val_loader = make_loader(val_dataset, BATCH_SIZE, shuffle=False)
+test_loader = make_loader(test_dataset, BATCH_SIZE, shuffle=False)
+
+images, labels = next(iter(train_loader))
+print(f'train/val/test: {len(train_dataset)}/{len(val_dataset)}/{len(test_dataset)}')
+print('Один batch:', images.shape, labels.shape)"""))
+
+nb.add(md("""### 4. VGG-style CNN
+
+Каждый каскад содержит две пары `Conv2d → BatchNorm2d → ReLU`, затем
+`MaxPool2d → Dropout2d`. `AdaptiveAvgPool2d` делает классификатор компактным.
+Последний слой выдаёт **логиты**: `Softmax` не нужен, потому что
+`CrossEntropyLoss` уже включает `LogSoftmax`."""))
+nb.add(sol("""class VGGStyleCNN(nn.Module):
+    def __init__(self, num_classes=10):
+        super().__init__()
+
+        def block(in_channels, out_channels, dropout):
+            return nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, 3, padding=1, bias=False),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True),
+                nn.MaxPool2d(2),
+                nn.Dropout2d(dropout),
+            )
+
+        self.features = nn.Sequential(
+            block(3, 64, 0.10),   # 32x32 -> 16x16
+            block(64, 128, 0.20), # 16x16 -> 8x8
+            block(128, 256, 0.30),# 8x8 -> 4x4
+        )
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(256, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.40),
+            nn.Linear(256, num_classes),
+        )
+
+    def forward(self, x):
+        return self.classifier(self.features(x))
+
+def count_parameters(model, trainable_only=False):
+    parameters = (p for p in model.parameters() if p.requires_grad) if trainable_only \
+                 else model.parameters()
+    return sum(p.numel() for p in parameters)
+
+model = VGGStyleCNN().to(device)
+print(model)
+print(f'Параметров: {count_parameters(model):,}')
+with torch.inference_mode():
+    print('Форма логитов:', model(images[:2].to(device)).shape)"""))
+
+nb.add(md("""### 5. Циклы обучения и оценки
+
+Loss суммируется с учётом размера batch, поэтому метрики корректны и для
+последнего неполного batch. В режиме замороженной ResNet backbone остаётся в
+`eval`, чтобы не менять running statistics слоёв BatchNorm."""))
+nb.add(sol("""criterion = nn.CrossEntropyLoss()
+USE_AMP = device.type == 'cuda'
+
+def train_one_epoch(model, loader, optimizer, scaler, scheduler=None,
+                    frozen_backbone=False):
+    if frozen_backbone:
+        model.eval()
+        model.fc.train()
+    else:
+        model.train()
+
+    loss_sum = 0.0
+    correct = 0
+    sample_count = 0
+    for inputs, targets in loader:
+        inputs = inputs.to(device, non_blocking=PIN_MEMORY)
+        targets = targets.to(device, non_blocking=PIN_MEMORY)
+        optimizer.zero_grad(set_to_none=True)
+
+        with torch.cuda.amp.autocast(enabled=USE_AMP):
+            logits = model(inputs)
+            loss = criterion(logits, targets)
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        if scheduler is not None:
+            scheduler.step()
+
+        batch_size = targets.size(0)
+        loss_sum += loss.item() * batch_size
+        correct += (logits.argmax(dim=1) == targets).sum().item()
+        sample_count += batch_size
+    return loss_sum / sample_count, correct / sample_count
+
+@torch.inference_mode()
+def evaluate(model, loader):
+    model.eval()
+    loss_sum = 0.0
+    correct = 0
+    sample_count = 0
+    for inputs, targets in loader:
+        inputs = inputs.to(device, non_blocking=PIN_MEMORY)
+        targets = targets.to(device, non_blocking=PIN_MEMORY)
+        logits = model(inputs)
+        loss = criterion(logits, targets)
+        batch_size = targets.size(0)
+        loss_sum += loss.item() * batch_size
+        correct += (logits.argmax(dim=1) == targets).sum().item()
+        sample_count += batch_size
+    return loss_sum / sample_count, correct / sample_count
+
+def fit(model, train_loader, val_loader, optimizer, epochs, scheduler=None,
+        frozen_backbone=False, phase='model'):
+    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
+    scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
+    best_val_acc = -1.0
+    best_state = copy.deepcopy(model.state_dict())
+    started = time.perf_counter()
+
+    for epoch in range(1, epochs + 1):
+        train_loss, train_acc = train_one_epoch(
+            model, train_loader, optimizer, scaler, scheduler, frozen_backbone)
+        val_loss, val_acc = evaluate(model, val_loader)
+        for key, value in (
+            ('train_loss', train_loss), ('train_acc', train_acc),
+            ('val_loss', val_loss), ('val_acc', val_acc),
+        ):
+            history[key].append(value)
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state = copy.deepcopy(model.state_dict())
+        print(f'{phase} | epoch {epoch:02d}/{epochs}: '
+              f'train loss={train_loss:.4f}, acc={train_acc:.2%}; '
+              f'val loss={val_loss:.4f}, acc={val_acc:.2%}')
+
+    elapsed = time.perf_counter() - started
+    model.load_state_dict(best_state)
+    print(f'{phase}: лучшая val accuracy={best_val_acc:.2%}, время={elapsed:.1f} с')
+    return history, elapsed"""))
+
+nb.add(md("""### 6. Обучение собственной CNN и кривые
+
+18 эпох с аугментациями и `OneCycleLR` обычно дают более 70% на test и должны
+укладываться в 15 минут на современной CUDA GPU. Итог всегда вычисляется по
+фактическому запуску, а не подставляется заранее."""))
+nb.add(sol("""CNN_EPOCHS = 18
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=1e-4)
+scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    optimizer,
+    max_lr=3e-3,
+    epochs=CNN_EPOCHS,
+    steps_per_epoch=len(train_loader),
+    pct_start=0.20,
+)
+
+cnn_history, cnn_train_seconds = fit(
+    model, train_loader, val_loader, optimizer, CNN_EPOCHS,
+    scheduler=scheduler, phase='VGG-style CNN')
+cnn_test_loss, cnn_test_acc = evaluate(model, test_loader)
+cnn_trainable_parameters = count_parameters(model, trainable_only=True)
+print(f'CNN test loss={cnn_test_loss:.4f}, test accuracy={cnn_test_acc:.2%}')
+if cnn_test_acc < 0.65:
+    print('Цель 65% не достигнута: проверьте, что обучение шло на всех 18 эпохах.')
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+epochs = range(1, CNN_EPOCHS + 1)
+axes[0].plot(epochs, cnn_history['train_loss'], label='train')
+axes[0].plot(epochs, cnn_history['val_loss'], label='val')
+axes[0].set(title='Loss', xlabel='epoch')
+axes[1].plot(epochs, cnn_history['train_acc'], label='train')
+axes[1].plot(epochs, cnn_history['val_acc'], label='val')
+axes[1].set(title='Accuracy', xlabel='epoch')
+for axis in axes:
+    axis.grid(True)
+    axis.legend()
+plt.tight_layout()
+plt.show()"""))
 
 # === Часть В. Transfer learning ===
-nb.add(md("---\n## Часть В. Transfer learning на Intel Image Classification"))
-nb.add(md("""### 7. Загрузка предобученной ResNet50
+nb.add(md("""---
+## Часть В. Transfer learning на CIFAR-10
 
-Ниже показан шаблон для каталога `intel_image_classification`. Если датасет
-скачан и распакован в `data/intel/`, расскомментируйте блок загрузки."""))
-nb.add(sol("""# Подготовка: загрузим ResNet50 (предобученную на ImageNet)
-from tensorflow.keras.applications import ResNet50
+Используем `ResNet18_Weights.DEFAULT`, то есть актуальный API torchvision.
+При первом запуске веса ImageNet автоматически скачиваются в кэш Torch Hub
+(нужен доступ в интернет), затем используются локально. Предобученная ResNet18
+ожидает ImageNet-нормализацию и вход 224×224, поэтому для неё создаются отдельные
+датасеты и загрузчики, но используются те же train/val индексы."""))
+nb.add(md("### 7. ImageNet-преобразования и предобученная ResNet18"))
+nb.add(sol("""weights = ResNet18_Weights.DEFAULT
+imagenet_eval_transform = weights.transforms()
+imagenet_train_transform = transforms.Compose([
+    transforms.RandomResizedCrop(
+        224, scale=(0.75, 1.0), interpolation=InterpolationMode.BILINEAR,
+        antialias=True),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=imagenet_eval_transform.mean,
+        std=imagenet_eval_transform.std,
+    ),
+])
 
-base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
-base_model.trainable = False  # ЭТАП 1: заморозка backbone
-print('Число слоёв в backbone:', len(base_model.layers))
-print('Обучаемых параметров после заморозки:',
-      sum(np.prod(w.shape) for w in base_model.trainable_weights))"""))
+tl_train_base = datasets.CIFAR10(DATA_ROOT, train=True, download=False,
+                                 transform=imagenet_train_transform)
+tl_val_base = datasets.CIFAR10(DATA_ROOT, train=True, download=False,
+                               transform=imagenet_eval_transform)
+tl_test_dataset = datasets.CIFAR10(DATA_ROOT, train=False, download=False,
+                                   transform=imagenet_eval_transform)
+tl_train_dataset = Subset(tl_train_base, train_indices)
+tl_val_dataset = Subset(tl_val_base, val_indices)
 
-nb.add(md("### 8. Этап 1 — feature extraction (заморозка)"))
-nb.add(sol("""from tensorflow.keras.utils import image_dataset_from_directory
+# AMP снижает расход памяти; 128 обычно подходит для ResNet18. При нехватке VRAM
+# достаточно уменьшить только эту константу до 64.
+TL_BATCH_SIZE = 128
+tl_train_loader = make_loader(tl_train_dataset, TL_BATCH_SIZE, shuffle=True)
+tl_val_loader = make_loader(tl_val_dataset, TL_BATCH_SIZE, shuffle=False)
+tl_test_loader = make_loader(tl_test_dataset, TL_BATCH_SIZE, shuffle=False)
 
-# Раскомментировать, если датасет доступен:
-# train_ds = image_dataset_from_directory('data/intel/seg_train/seg_train',
-#                                         image_size=(224,224), batch_size=64,
-#                                         validation_split=0.2, subset='training', seed=42)
-# val_ds = image_dataset_from_directory('data/intel/seg_train/seg_train',
-#                                       image_size=(224,224), batch_size=64,
-#                                       validation_split=0.2, subset='validation', seed=42)
+try:
+    transfer_model = resnet18(weights=weights)
+except Exception as error:
+    raise RuntimeError(
+        'Не удалось получить веса ResNet18. Проверьте интернет или кэш Torch Hub '
+        '(обычно ~/.cache/torch/hub/checkpoints).'
+    ) from error
 
-# Модель с новой головой (заменяем классификатор на 6 классов Intel)
-inputs = keras.Input((224, 224, 3))
-x = keras.applications.resnet50.preprocess_input(inputs)
-x = base_model(x, training=False)
-x = layers.GlobalAveragePooling2D()(x)
-x = layers.Dense(256, activation='relu')(x)
-x = layers.Dropout(0.2)(x)
-outputs = layers.Dense(6, activation='softmax')(x)
-model_tl = keras.Model(inputs, outputs)
+print('Категории исходных весов:', len(weights.meta['categories']))
+print('Eval transforms:', imagenet_eval_transform)"""))
 
-model_tl.compile(optimizer='adam',
-                 loss='sparse_categorical_crossentropy',
-                 metrics=['accuracy'])
-model_tl.summary(show_trainable=True)"""))
+nb.add(md("""### 8. Feature extraction: замораживаем backbone
 
-nb.add(md("### 9. Этап 2 — fine-tuning с низким lr"))
-nb.add(sol("""# Разморозка
-base_model.trainable = True
-model_tl.compile(optimizer=keras.optimizers.Adam(1e-5),  # НИЗКИЙ lr!
-                 loss='sparse_categorical_crossentropy',
-                 metrics=['accuracy'])
-model_tl.summary(show_trainable=True)
+Сначала у всех исходных параметров устанавливаем `requires_grad=False`, затем
+заменяем `fc`. Новый слой создаётся обучаемым, и оптимизатор получает только его
+параметры. В этой фазе backbone выполняет только извлечение признаков."""))
+nb.add(sol("""for parameter in transfer_model.parameters():
+    parameter.requires_grad = False
 
-# Дообучаем 2-3 эпохи (без датасета здесь не запустится)
-# history_ft = model_tl.fit(train_ds, validation_data=val_ds, epochs=2)"""))
+in_features = transfer_model.fc.in_features
+transfer_model.fc = nn.Linear(in_features, 10)
+transfer_model = transfer_model.to(device)
 
-nb.add(md("""**Ответ (почему lr=1e-5 при fine-tuning):** backbone уже обучен на
-большом датасете (ImageNet) и содержит хорошие признаки. Если обновлять его веса
-с большой скоростью (`lr=0.01`), мы быстро разрушим эти признаки (catastrophic
-forgetting), и качество упадёт. Низкий lr (1e-5 vs 1e-3 на этапе feature
-extraction) вносит малые, аккуратные поправки в backbone, дообучая его под
-новый домен, не разрушая общих признаков."""))
+head_trainable_parameters = count_parameters(transfer_model, trainable_only=True)
+print(f'Всего параметров: {count_parameters(transfer_model):,}')
+print(f'Обучаемых при заморозке: {head_trainable_parameters:,}')
+assert all(not p.requires_grad for name, p in transfer_model.named_parameters()
+           if not name.startswith('fc.'))
 
-nb.add(md("""### 10. Сравнение
+HEAD_EPOCHS = 3
+head_optimizer = torch.optim.Adam(
+    (p for p in transfer_model.parameters() if p.requires_grad), lr=1e-3)
+head_history, head_train_seconds = fit(
+    transfer_model, tl_train_loader, tl_val_loader, head_optimizer,
+    HEAD_EPOCHS, frozen_backbone=True, phase='ResNet18 head')
+head_test_loss, head_test_acc = evaluate(transfer_model, tl_test_loader)
+print(f'Frozen backbone: test loss={head_test_loss:.4f}, '
+      f'test accuracy={head_test_acc:.2%}')"""))
 
-| Модель | Точность | Время/эпоха | Обучаемых параметров |
-|---|---|---|---|
-| Собственная CNN на CIFAR-10 | ~0.70–0.75 | ~30 с | ~1.2 М |
-| ResNet50 feature extraction (Intel) | ~0.85 | ~60 с | ~0.4 М (только голова) |
-| ResNet50 + fine-tuning (Intel) | ~0.90 | ~90 с | ~24 М (весь backbone) |
+nb.add(md("""### 9. Fine-tuning всей сети
 
-Transfer learning даёт быстрый старт (точность выше) за счёт предобученных
-признаков. Fine-tuning добавляет ещё 3–5 п.п. ценой разморозки 24 М параметров."""))
+Теперь размораживаем backbone и создаём **новый** Adam с требуемым малым
+`lr=1e-5`. Новый оптимизатор важен: старый вообще не содержал параметры
+backbone. Низкий learning rate аккуратно адаптирует ImageNet-признаки к CIFAR-10
+и уменьшает риск catastrophic forgetting."""))
+nb.add(sol("""for parameter in transfer_model.parameters():
+    parameter.requires_grad = True
+
+fine_tune_trainable_parameters = count_parameters(
+    transfer_model, trainable_only=True)
+print(f'Обучаемых после разморозки: {fine_tune_trainable_parameters:,}')
+
+FINE_TUNE_EPOCHS = 3
+fine_tune_optimizer = torch.optim.Adam(transfer_model.parameters(), lr=1e-5)
+fine_tune_history, fine_tune_seconds = fit(
+    transfer_model, tl_train_loader, tl_val_loader, fine_tune_optimizer,
+    FINE_TUNE_EPOCHS, frozen_backbone=False, phase='ResNet18 fine-tune')
+fine_tune_test_loss, fine_tune_test_acc = evaluate(
+    transfer_model, tl_test_loader)
+print(f'Fine-tuned: test loss={fine_tune_test_loss:.4f}, '
+      f'test accuracy={fine_tune_test_acc:.2%}')"""))
+
+nb.add(md("""**Почему не `lr=0.01`?** Предобученный backbone уже хранит полезные
+универсальные признаки. Большой шаг быстро и одновременно изменит миллионы его
+весов, разрушая эти признаки (catastrophic forgetting); качество может резко
+упасть. `lr=1e-5` вносит малые поправки под новый домен.
+
+Как и у собственной CNN, ResNet возвращает логиты. Перед
+`nn.CrossEntropyLoss()` **нет Softmax**; вероятности нужны только для отдельной
+интерпретации предсказаний, где можно вызвать `logits.softmax(dim=1)`."""))
+
+nb.add(md("### 10. Фактическое сравнение результатов"))
+nb.add(sol("""rows = [
+    ('VGG-style CNN', cnn_test_acc, cnn_train_seconds, cnn_trainable_parameters),
+    ('ResNet18: frozen', head_test_acc, head_train_seconds, head_trainable_parameters),
+    ('ResNet18: fine-tuned', fine_tune_test_acc,
+     head_train_seconds + fine_tune_seconds, fine_tune_trainable_parameters),
+]
+
+print(f"{'Модель':<24} {'test acc':>10} {'время, с':>12} {'обуч. параметры':>20}")
+print('-' * 70)
+for name, accuracy, seconds, parameters in rows:
+    print(f'{name:<24} {accuracy:>9.2%} {seconds:>12.1f} {parameters:>20,}')
+
+improvement = fine_tune_test_acc - head_test_acc
+print(f'Изменение test accuracy после fine-tuning: {improvement:+.2%}')"""))
+
+nb.add(md("""---
+## Итог
+
+В решении есть NumPy-реализация свёртки, собственная VGG-style CNN с настоящими
+циклами train/eval и двухэтапный transfer learning ResNet18 на CIFAR-10. Все
+табличные значения получаются при запуске; тестовая выборка нигде не используется
+для обучения или выбора лучшей эпохи."""))
 
 path = "M4-cnn/attachments/kim-04-cnn-solution.ipynb"
 nb.save(path)
