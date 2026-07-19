@@ -168,6 +168,7 @@ nb.add(md("### 7. Устройство, seed и тензоры"))
 nb.add(sol("""import torch
 import torch.nn as nn
 import torch.optim as optim
+import time
 from torch.utils.data import DataLoader, TensorDataset
 
 def set_torch_seed(seed=42):
@@ -198,7 +199,7 @@ def make_loader(dataset, batch_size, seed=42):
         pin_memory=torch.cuda.is_available(),
     )"""))
 
-nb.add(md("### 8. Модель, оценка и пять шагов обучения"))
+nb.add(md("### Модель, оценка и пять шагов обучения"))
 nb.add(sol("""def make_model():
     return nn.Sequential(
         nn.Linear(784, 64),
@@ -270,7 +271,7 @@ for a in ax:
 plt.tight_layout()
 plt.show()"""))
 
-nb.add(md("### 9. Сравнение размеров пакета 10 / 50 / 200 / 500"))
+nb.add(md("### 8. Сравнение размеров пакета 10 / 50 / 200 / 500"))
 nb.add(sol("""batch_sizes = [10, 50, 200, 500]
 comparison = {}
 comparison_epochs = 12
@@ -307,6 +308,84 @@ nb.add(md("""**Вывод:** малые пакеты выполняют боль
 обычно быстрее улучшают метрики в пересчёте на эпохи. Большие пакеты дают более
 гладкие, но более редкие обновления. Для сравнения времени нужно также учитывать,
 что эпоха с `batch_size=10` содержит намного больше шагов оптимизатора."""))
+
+nb.add(md("""### 9. Выбор активации, инициализации и связности
+
+Сравниваем три конфигурации при одинаковых seed, optimizer, batch size и числе
+эпох. Инициализация выбирается согласованно с активацией: He для ReLU, Xavier
+для tanh. Число скрытых слоёв задаёт различную степень связности модели."""))
+nb.add(sol("""class ConfigurableMLP(nn.Module):
+    def __init__(self, hidden_sizes, activation):
+        super().__init__()
+        activation_factory = nn.ReLU if activation == 'relu' else nn.Tanh
+        layers = []
+        in_features = 784
+        for hidden_size in hidden_sizes:
+            linear = nn.Linear(in_features, hidden_size)
+            if activation == 'relu':
+                nn.init.kaiming_normal_(linear.weight, nonlinearity='relu')
+            else:
+                nn.init.xavier_normal_(linear.weight)
+            nn.init.zeros_(linear.bias)
+            layers.extend([linear, activation_factory()])
+            in_features = hidden_size
+        output = nn.Linear(in_features, 10)
+        nn.init.xavier_normal_(output.weight)
+        nn.init.zeros_(output.bias)
+        layers.append(output)
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, inputs):
+        return self.network(inputs)
+
+
+configuration_specs = [
+    ('ReLU + He, 1 слой', [64], 'relu'),
+    ('tanh + Xavier, 1 слой', [64], 'tanh'),
+    ('ReLU + He, 2 слоя', [128, 64], 'relu'),
+]
+configuration_results = []
+configuration_ds = TensorDataset(X_tr_t[:4_000], y_tr_t[:4_000])
+
+for name, hidden_sizes, activation in configuration_specs:
+    set_torch_seed(SEED)
+    configuration_model = ConfigurableMLP(hidden_sizes, activation).to(device)
+    configuration_loader = make_loader(configuration_ds, batch_size=64, seed=SEED)
+    configuration_optimizer = optim.SGD(configuration_model.parameters(), lr=0.05)
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+    started = time.perf_counter()
+    configuration_history = train_pytorch(
+        configuration_model, configuration_loader, criterion,
+        configuration_optimizer, device, epochs=6, X_val=X_va_t, y_val=y_va_t,
+    )
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+    elapsed = time.perf_counter() - started
+    parameters = sum(p.numel() for p in configuration_model.parameters())
+    configuration_results.append({
+        'конфигурация': name,
+        'val_loss': configuration_history['val_loss'][-1],
+        'val_accuracy': configuration_history['val_acc'][-1],
+        'параметры': parameters,
+        'секунды': elapsed,
+    })
+
+print(f"{'Конфигурация':<28} {'val loss':>10} {'val acc':>10} "
+      f"{'параметры':>12} {'секунды':>9}")
+for row in configuration_results:
+    print(f"{row['конфигурация']:<28} {row['val_loss']:>10.4f} "
+          f"{row['val_accuracy']:>10.4f} {row['параметры']:>12,} "
+          f"{row['секунды']:>9.2f}")
+
+best_configuration = max(configuration_results, key=lambda row: row['val_accuracy'])
+print('Выбрана по validation accuracy:', best_configuration['конфигурация'])"""))
+
+nb.add(md("""Выбор выполняется только по validation accuracy. Test не участвует в
+сравнении конфигураций. ReLU с He обычно лучше сохраняет масштаб сигнала в
+глубоких ReLU-сетях, а Xavier соответствует симметричной tanh. Второй скрытый
+слой увеличивает выразительность и число параметров, но не гарантирует лучшую
+валидацию."""))
 
 # === Часть В. Переобучение и регуляризация ===
 nb.add(md("""---
@@ -445,5 +524,5 @@ nb.add(md("""**Вывод:** у сети высокой ёмкости train los
 validation и не тратят время на заведомо ухудшающиеся эпохи."""))
 
 path = "M2-training/attachments/kim-02-backprop-training-solution.ipynb"
-nb.save(path)
+nb.save(path, preserve_outputs=True)
 print(f"Сохранён: {path}  ({nb.cell_count()} ячеек)")

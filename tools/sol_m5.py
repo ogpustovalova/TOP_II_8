@@ -8,7 +8,7 @@ from nb_builder import Notebook, md, sol, solution_header
 
 nb = Notebook("КИМ 5.1 — эталон на PyTorch")
 nb.add(solution_header(
-    "КИМ 5.1. Рекуррентные сети и 1D-CNN (PyTorch)",
+    "КИМ 5.1. LSTM, GRU и 1D-CNN (PyTorch)",
     "kim-05-sequences.ipynb",
 ))
 nb.add(md("""В решении нет зависимости от Keras: предобработка текста, модели,
@@ -24,6 +24,9 @@ nb.add(md("""В решении нет зависимости от Keras: пре�
 # === Общая настройка ===
 nb.add(md("---\n## Общая настройка"))
 nb.add(sol("""import random
+import re
+import subprocess
+import sys
 import time
 import urllib.request
 import zipfile
@@ -56,7 +59,33 @@ print("Устройство:", DEVICE)"""))
 
 # === Часть А. Предобработка текстов ===
 nb.add(md("---\n## Часть А. Предобработка русских текстов"))
-nb.add(md("""### 1. Токенизация, стоп-слова и лемматизация
+nb.add(md("""### 1. Regex-нормализация и автоматические тесты
+
+До токенизации заменяем URL, e-mail и числа устойчивыми маркерами. Пять `assert`
+проверяют обычные случаи, регистр, несколько пробелов и отсутствие ложных
+срабатываний."""))
+nb.add(sol("""URL_RE = re.compile(r'https?://\\S+|www\\.\\S+', re.IGNORECASE)
+EMAIL_RE = re.compile(r'\\b[\\w.+-]+@[\\w.-]+\\.[A-Za-zА-Яа-я]{2,}\\b')
+NUMBER_RE = re.compile(r'(?<!\\w)[+-]?(?:\\d+[.,]?\\d*|[.,]\\d+)(?!\\w)')
+SPACE_RE = re.compile(r'\\s+')
+
+
+def normalize_markup(text):
+    normalized = str(text)
+    normalized = URL_RE.sub(' <URL> ', normalized)
+    normalized = EMAIL_RE.sub(' <EMAIL> ', normalized)
+    normalized = NUMBER_RE.sub(' <NUMBER> ', normalized)
+    return SPACE_RE.sub(' ', normalized).strip()
+
+
+assert normalize_markup('Сайт https://example.org/a') == 'Сайт <URL>'
+assert normalize_markup('Пишите A.User+tag@mail.ru') == 'Пишите <EMAIL>'
+assert normalize_markup('Комиссия 12,5 рублей') == 'Комиссия <NUMBER> рублей'
+assert normalize_markup('  два\\nпробела\\tздесь ') == 'два пробела здесь'
+assert normalize_markup('модель resnet50') == 'модель resnet50'
+print('Regex-тесты: 5/5')"""))
+
+nb.add(md("""### 2. Токенизация, стоп-слова и лемматизация
 
 Сначала текст приводится к нижнему регистру и разбивается именно
 `nltk.word_tokenize`. Режим `preserve_line=True` не требует внешней модели
@@ -90,7 +119,7 @@ print("Источник стоп-слов:", stopword_source)
 
 def preprocess(text):
     tokens = word_tokenize(
-        str(text).lower(), language="russian", preserve_line=True,
+        normalize_markup(text).lower(), language="russian", preserve_line=True,
     )
     lemmas = []
     for token in tokens:
@@ -106,7 +135,56 @@ example = "Банк быстро решил мою проблему, а сотр
 print("Исходный текст:", example)
 print("После preprocess:", preprocess(example))"""))
 
-nb.add(md("""### 2. Данные и построение словаря
+nb.add(md("""### 3. Синтаксический разбор пяти предложений
+
+Natasha возвращает для каждого токена идентификатор вершины, `head_id` и тип
+синтаксической связи. Если пакет отсутствует, эталон устанавливает его в текущее
+окружение."""))
+nb.add(sol("""try:
+    from natasha import Doc, NewsEmbedding, NewsMorphTagger, NewsSyntaxParser, Segmenter
+except ImportError:
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'natasha'])
+    from natasha import Doc, NewsEmbedding, NewsMorphTagger, NewsSyntaxParser, Segmenter
+
+segmenter = Segmenter()
+embedding = NewsEmbedding()
+morph_tagger = NewsMorphTagger(embedding)
+syntax_parser = NewsSyntaxParser(embedding)
+syntax_sentences = [
+    'Банк быстро одобрил заявку.',
+    'Сотрудник подробно объяснил условия кредита.',
+    'Приложение часто зависает после обновления.',
+    'Поддержка не ответила на обращение клиента.',
+    'Низкая комиссия сделала перевод выгодным.',
+]
+syntax_rows = []
+for sentence_index, sentence in enumerate(syntax_sentences, start=1):
+    document = Doc(sentence)
+    document.segment(segmenter)
+    document.tag_morph(morph_tagger)
+    document.parse_syntax(syntax_parser)
+    for token in document.tokens:
+        syntax_rows.append({
+            'sentence': sentence_index,
+            'token_id': token.id,
+            'token': token.text,
+            'head_id': token.head_id,
+            'dependency': token.rel,
+        })
+
+syntax_table = pd.DataFrame(syntax_rows)
+print(syntax_table.to_string(index=False))
+assert syntax_table['sentence'].nunique() == 5
+assert syntax_table['dependency'].notna().all()"""))
+
+nb.add(md("""В предложении «Банк быстро одобрил заявку» `одобрил` является
+корнем, `банк` связан с ним как подлежащее, а `заявку` — как дополнение. Связь
+наречия `быстро` описывает обстоятельство действия. Во втором предложении
+`сотрудник` — подлежащее при сказуемом `объяснил`, а `условия` — его дополнение.
+Точные метки зависят от версии модели, поэтому проверяется структура, а не
+заранее заданный список идентификаторов."""))
+
+nb.add(md("""### 4. Данные и построение словаря
 
 `banks.csv` является внешним датасетом и намеренно не загружается по умолчанию.
 Для работы с ним нужно вручную положить файл рядом с ноутбуком, проверить имена
@@ -211,8 +289,13 @@ def text_to_sequence(tokens, word_to_index, maxlen=MAXLEN):
     return sequence[-maxlen:]
 
 
-train_idx, test_idx = stratified_split_indices(labels)
+train_pool_idx, test_idx = stratified_split_indices(labels)
+relative_train_idx, relative_val_idx = stratified_split_indices(
+    labels[train_pool_idx], test_fraction=0.2, seed=SEED + 1)
+train_idx = train_pool_idx[relative_train_idx]
+val_idx = train_pool_idx[relative_val_idx]
 train_tokens = [preprocess(texts[i]) for i in train_idx]
+val_tokens = [preprocess(texts[i]) for i in val_idx]
 test_tokens = [preprocess(texts[i]) for i in test_idx]
 
 # Словарь строится только по train, поэтому test не передаёт информацию в обучение.
@@ -225,17 +308,22 @@ X_test = torch.tensor(
     [text_to_sequence(tokens, word_to_index) for tokens in test_tokens],
     dtype=torch.long,
 )
+X_val = torch.tensor(
+    [text_to_sequence(tokens, word_to_index) for tokens in val_tokens],
+    dtype=torch.long,
+)
 y_train = torch.tensor(labels[train_idx], dtype=torch.float32)
+y_val = torch.tensor(labels[val_idx], dtype=torch.float32)
 y_test = torch.tensor(labels[test_idx], dtype=torch.float32)
 
 assert word_to_index["<PAD>"] == 0 and word_to_index["<OOV>"] == 1
 assert X_train.shape[1] == MAXLEN and int(X_train.max()) < MAX_WORDS
 print("Размер словаря:", len(word_to_index), "из максимальных", MAX_WORDS)
-print("Train/test:", X_train.shape, X_test.shape)
+print("Train/val/test:", X_train.shape, X_val.shape, X_test.shape)
 print("Проверка PAD/OOV:", text_to_sequence(["совсемновоеслово"], word_to_index, 4))"""))
 
 # === Часть Б. Классификация текста ===
-nb.add(md("---\n## Часть Б. Классификация текста: LSTM и 1D-CNN"))
+nb.add(md("---\n## Часть Б. Классификация текста: LSTM, GRU и 1D-CNN"))
 nb.add(md("""Обе модели возвращают **логиты**, поэтому используется численно
 устойчивая `BCEWithLogitsLoss` (сигмоида уже включена в loss). `padding_idx=0`
 фиксирует нулевой эмбеддинг для паддинга. В CNN `Conv1d` ожидает каналы перед
@@ -246,6 +334,7 @@ nb.add(sol("""text_train_loader = DataLoader(
     shuffle=True,
     generator=torch.Generator().manual_seed(SEED),
 )
+text_val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=64)
 text_test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=64)
 
 
@@ -262,30 +351,55 @@ class LSTMClassifier(nn.Module):
         return self.output(hidden[-1]).squeeze(1)         # (batch,)
 
 
+class GRUClassifier(nn.Module):
+    def __init__(self, vocab_size=MAX_WORDS, embedding_dim=64, hidden_size=64):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+        self.gru = nn.GRU(embedding_dim, hidden_size, batch_first=True)
+        self.output = nn.Linear(hidden_size, 1)
+
+    def forward(self, token_ids):
+        embedded = self.embedding(token_ids)
+        _, hidden = self.gru(embedded)
+        return self.output(hidden[-1]).squeeze(1)
+
+
 class CNN1DClassifier(nn.Module):
     def __init__(self, vocab_size=MAX_WORDS, embedding_dim=64, channels=250):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
         self.conv = nn.Conv1d(embedding_dim, channels, kernel_size=5)
         self.pool = nn.AdaptiveMaxPool1d(1)
-        self.output = nn.Linear(channels, 1)
+        self.classifier = nn.Sequential(
+            nn.Linear(channels, 128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, 1),
+        )
 
     def forward(self, token_ids):
         embedded = self.embedding(token_ids).transpose(1, 2)  # (batch, 64, length)
         features = torch.relu(self.conv(embedded))
         pooled = self.pool(features).squeeze(2)
-        return self.output(pooled).squeeze(1)                  # (batch,)
+        return self.classifier(pooled).squeeze(1)              # (batch,)
 
 
-lstm_classifier = LSTMClassifier().to(DEVICE)
+lstm_classifier = LSTMClassifier(hidden_size=64).to(DEVICE)
+gru_classifier = GRUClassifier(hidden_size=64).to(DEVICE)
 cnn_classifier = CNN1DClassifier().to(DEVICE)
 sample_tokens, _ = next(iter(text_train_loader))
 with torch.no_grad():
     print("Вход:", tuple(sample_tokens.shape))
     print("Выход LSTM:", tuple(lstm_classifier(sample_tokens.to(DEVICE)).shape))
+    print("Выход GRU:", tuple(gru_classifier(sample_tokens.to(DEVICE)).shape))
     print("Выход CNN:", tuple(cnn_classifier(sample_tokens.to(DEVICE)).shape))"""))
 
-nb.add(md("### Обучение и измеренное сравнение"))
+nb.add(md("""### Обучение, выбор по validation и измеренное сравнение
+
+Для LSTM и GRU сравниваются `hidden_size=32` и `hidden_size=64`. Выбор делается
+только по validation accuracy (при равенстве — по validation loss), а test
+используется один раз для выбранных моделей. Это предотвращает подстройку
+гиперпараметров под итоговую выборку."""))
 nb.add(sol("""@torch.inference_mode()
 def evaluate_classifier(model, loader):
     model.eval()
@@ -301,7 +415,11 @@ def evaluate_classifier(model, loader):
     return total_loss / total_items, total_correct / total_items
 
 
-def train_classifier(model, train_loader, epochs=8, learning_rate=1e-3):
+def count_trainable_parameters(model):
+    return sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+
+
+def train_classifier(model, train_loader, val_loader, epochs=8, learning_rate=1e-3):
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     started = time.perf_counter()
@@ -320,14 +438,59 @@ def train_classifier(model, train_loader, epochs=8, learning_rate=1e-3):
         if epoch in {1, epochs}:
             print(f"  эпоха {epoch:02d}: train loss = {running_loss / seen:.4f}")
     elapsed = time.perf_counter() - started
+    val_loss, val_accuracy = evaluate_classifier(model, val_loader)
+    return {
+        "val_loss": val_loss,
+        "val_accuracy": val_accuracy,
+        "parameters": count_trainable_parameters(model),
+        "seconds": elapsed,
+    }
+
+
+candidate_models = {}
+candidate_rows = []
+for architecture, model_class in [("LSTM", LSTMClassifier), ("GRU", GRUClassifier)]:
+    for hidden_size in (32, 64):
+        seed_offset = hidden_size + (0 if architecture == "LSTM" else 100)
+        torch.manual_seed(SEED + seed_offset)
+        model = model_class(hidden_size=hidden_size).to(DEVICE)
+        print(f"{architecture}, hidden_size={hidden_size}")
+        text_train_loader.generator.manual_seed(SEED)
+        result = train_classifier(model, text_train_loader, text_val_loader)
+        candidate_models[(architecture, hidden_size)] = model
+        candidate_rows.append({
+            "модель": architecture,
+            "hidden_size": hidden_size,
+            **result,
+        })
+
+candidate_results = pd.DataFrame(candidate_rows)
+selected_rows = []
+for architecture in ("LSTM", "GRU"):
+    architecture_rows = candidate_results[candidate_results["модель"] == architecture]
+    best_index = architecture_rows.sort_values(
+        ["val_accuracy", "val_loss"], ascending=[False, True]
+    ).index[0]
+    best_row = candidate_results.loc[best_index].to_dict()
+    hidden_size = int(best_row["hidden_size"])
+    model = candidate_models[(architecture, hidden_size)]
     test_loss, test_accuracy = evaluate_classifier(model, text_test_loader)
-    return {"test_loss": test_loss, "test_accuracy": test_accuracy, "seconds": elapsed}
+    best_row.update({"test_loss": test_loss, "test_accuracy": test_accuracy})
+    selected_rows.append(best_row)
 
-
-print("LSTM")
-lstm_text_result = train_classifier(lstm_classifier, text_train_loader)
+torch.manual_seed(SEED + 250)
+cnn_classifier = CNN1DClassifier().to(DEVICE)
 print("1D-CNN")
-cnn_text_result = train_classifier(cnn_classifier, text_train_loader)
+text_train_loader.generator.manual_seed(SEED)
+cnn_result = train_classifier(cnn_classifier, text_train_loader, text_val_loader)
+cnn_test_loss, cnn_test_accuracy = evaluate_classifier(cnn_classifier, text_test_loader)
+selected_rows.append({
+    "модель": "1D-CNN",
+    "hidden_size": np.nan,
+    **cnn_result,
+    "test_loss": cnn_test_loss,
+    "test_accuracy": cnn_test_accuracy,
+})
 
 metric_note = (
     "РЕАЛЬНАЯ МЕТРИКА banks.csv"
@@ -335,20 +498,21 @@ metric_note = (
     else "ДЕМОНСТРАЦИОННАЯ МЕТРИКА НА СИНТЕТИЧЕСКИХ ТЕКСТАХ"
 )
 print("\\n" + metric_note)
-text_results = pd.DataFrame([
-    {"модель": "LSTM", **lstm_text_result},
-    {"модель": "1D-CNN", **cnn_text_result},
-])
+print("\\nКандидаты LSTM/GRU (выбор только по validation):")
+print(candidate_results.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
+text_results = pd.DataFrame(selected_rows)
+print("\\nВыбранные LSTM/GRU и 1D-CNN:")
 print(text_results.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
 if not USE_BANKS_CSV:
     print("Эти accuracy нельзя выдавать за качество на banks.csv.")"""))
 
 nb.add(md("""`Conv1d(kernel_size=5)` ищет локальные признаки, похожие на
 5-граммы, а `AdaptiveMaxPool1d(1)` выбирает максимальный отклик каждого фильтра
-по всему тексту. CNN хорошо параллелится и обычно быстрее. LSTM читает слова
-последовательно и хранит состояние, поэтому лучше приспособлена к зависимостям,
-разнесённым дальше размера ядра, но обучение обходится дороже. Корректный вывод о
-точности нужно делать только после запуска обеих моделей на одном реальном
+по всему тексту. CNN хорошо параллелится и обычно быстрее. LSTM хранит отдельно
+скрытое состояние и состояние ячейки; GRU объединяет память компактнее и обычно
+имеет меньше параметров. Обе рекуррентные сети приспособлены к зависимостям,
+разнесённым дальше размера ядра CNN, но обучаются последовательно. Корректный
+вывод о точности нужно делать только после запуска моделей на одном реальном
 разбиении `banks.csv`; таблица выше для синтетики проверяет реализацию, а не
 заменяет такой эксперимент."""))
 
@@ -664,5 +828,5 @@ nb.add(md("""Все значения в итоговой таблице изме
 простое сезонное правило «температура как сутки назад»."""))
 
 path = "M5-sequences/attachments/kim-05-sequences-solution.ipynb"
-nb.save(path)
+nb.save(path, preserve_outputs=True)
 print(f"Сохранён: {path}  ({nb.cell_count()} ячеек)")

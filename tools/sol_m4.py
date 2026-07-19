@@ -428,6 +428,7 @@ head_optimizer = torch.optim.Adam(
 head_history, head_train_seconds = fit(
     transfer_model, tl_train_loader, tl_val_loader, head_optimizer,
     HEAD_EPOCHS, frozen_backbone=True, phase='ResNet18 head')
+head_val_loss, head_val_acc = evaluate(transfer_model, tl_val_loader)
 head_test_loss, head_test_acc = evaluate(transfer_model, tl_test_loader)
 print(f'Frozen backbone: test loss={head_test_loss:.4f}, '
       f'test accuracy={head_test_acc:.2%}')"""))
@@ -450,6 +451,8 @@ fine_tune_optimizer = torch.optim.Adam(transfer_model.parameters(), lr=1e-5)
 fine_tune_history, fine_tune_seconds = fit(
     transfer_model, tl_train_loader, tl_val_loader, fine_tune_optimizer,
     FINE_TUNE_EPOCHS, frozen_backbone=False, phase='ResNet18 fine-tune')
+fine_tune_val_loss, fine_tune_val_acc = evaluate(
+    transfer_model, tl_val_loader)
 fine_tune_test_loss, fine_tune_test_acc = evaluate(
     transfer_model, tl_test_loader)
 print(f'Fine-tuned: test loss={fine_tune_test_loss:.4f}, '
@@ -480,14 +483,166 @@ for name, accuracy, seconds, parameters in rows:
 improvement = fine_tune_test_acc - head_test_acc
 print(f'Изменение test accuracy после fine-tuning: {improvement:+.2%}')"""))
 
+# === Часть Г. Малая выборка ===
+nb.add(md("""---
+## Часть Г. Transfer learning на малой выборке
+
+Для каждого класса выбираем ровно 20 train-изображений. Validation и test
+остаются полными и не используются при формировании few-shot-выборки."""))
+nb.add(sol("""targets = np.asarray(train_eval_dataset.targets)
+rng = np.random.default_rng(SEED)
+fewshot_indices = []
+train_index_set = np.asarray(train_indices)
+for class_id in range(10):
+    class_indices = train_index_set[targets[train_index_set] == class_id].copy()
+    rng.shuffle(class_indices)
+    fewshot_indices.extend(class_indices[:20].tolist())
+
+fewshot_dataset = Subset(tl_train_base, fewshot_indices)
+fewshot_loader = make_loader(fewshot_dataset, batch_size=64, shuffle=True)
+print('Few-shot объектов:', len(fewshot_dataset))
+print('Баланс:', np.bincount(targets[fewshot_indices], minlength=10))
+
+fewshot_model = resnet18(weights=weights)
+for parameter in fewshot_model.parameters():
+    parameter.requires_grad = False
+fewshot_model.fc = nn.Linear(fewshot_model.fc.in_features, 10)
+fewshot_model = fewshot_model.to(device)
+
+fewshot_head_optimizer = torch.optim.Adam(fewshot_model.fc.parameters(), lr=1e-3)
+fewshot_head_history, fewshot_head_seconds = fit(
+    fewshot_model, fewshot_loader, tl_val_loader, fewshot_head_optimizer,
+    epochs=5, frozen_backbone=True, phase='Few-shot frozen head')
+fewshot_head_val_loss, fewshot_head_val_acc = evaluate(
+    fewshot_model, tl_val_loader)
+fewshot_head_test_loss, fewshot_head_test_acc = evaluate(
+    fewshot_model, tl_test_loader)
+
+for parameter in fewshot_model.parameters():
+    parameter.requires_grad = True
+fewshot_fine_optimizer = torch.optim.Adam(fewshot_model.parameters(), lr=1e-5)
+fewshot_fine_history, fewshot_fine_seconds = fit(
+    fewshot_model, fewshot_loader, tl_val_loader, fewshot_fine_optimizer,
+    epochs=3, frozen_backbone=False, phase='Few-shot fine-tune')
+fewshot_fine_val_loss, fewshot_fine_val_acc = evaluate(
+    fewshot_model, tl_val_loader)
+fewshot_fine_test_loss, fewshot_fine_test_acc = evaluate(
+    fewshot_model, tl_test_loader)
+
+fewshot_rows = [
+    ('20/class: frozen', fewshot_head_val_acc, fewshot_head_test_acc,
+     fewshot_head_seconds),
+    ('20/class: fine-tuned', fewshot_fine_val_acc, fewshot_fine_test_acc,
+     fewshot_head_seconds + fewshot_fine_seconds),
+    ('full train: frozen', head_val_acc, head_test_acc, head_train_seconds),
+    ('full train: fine-tuned', fine_tune_val_acc, fine_tune_test_acc,
+     head_train_seconds + fine_tune_seconds),
+]
+print(f"{'Режим':<25} {'val acc':>10} {'test acc':>10} {'время, с':>12}")
+for name, val_accuracy, test_accuracy, seconds in fewshot_rows:
+    print(f'{name:<25} {val_accuracy:>9.2%} {test_accuracy:>9.2%} '
+          f'{seconds:>12.1f}')"""))
+
+nb.add(md("""На малой выборке замороженный backbone уменьшает число обучаемых
+параметров и риск переобучения. Fine-tuning может улучшить соответствие домену,
+но при 20 объектах класса требует малого learning rate и контроля validation."""))
+
+# === Часть Д. CV-видеопайплайн ===
+nb.add(md("""---
+## Часть Д. YOLO и видеопайплайн OpenCV
+
+Эта часть требует `ultralytics` и OpenCV. При первом запуске скачиваются веса
+YOLO и открытое тестовое изображение. Из изображения создаётся короткое видео,
+чтобы весь конвейер оставался воспроизводимым без внешнего видеофайла."""))
+nb.add(sol("""import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+try:
+    import cv2
+    from ultralytics import YOLO
+except ImportError:
+    subprocess.check_call([
+        sys.executable, '-m', 'pip', 'install', '-q',
+        'ultralytics', 'opencv-python-headless',
+    ])
+    import cv2
+    from ultralytics import YOLO
+
+pipeline_dir = Path('data/cv_pipeline')
+pipeline_dir.mkdir(parents=True, exist_ok=True)
+image_path = pipeline_dir / 'bus.jpg'
+source_video_path = pipeline_dir / 'source.mp4'
+annotated_video_path = pipeline_dir / 'detections.mp4'
+saved_model_path = pipeline_dir / 'yolo11n-course.pt'
+
+if not image_path.exists():
+    urllib.request.urlretrieve('https://ultralytics.com/images/bus.jpg', image_path)
+
+frame = cv2.imread(str(image_path))
+if frame is None:
+    raise RuntimeError(f'OpenCV не прочитал {image_path}')
+height, width = frame.shape[:2]
+fps = 10
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+
+# Воспроизводимое короткое видео: плавный горизонтальный сдвиг тестового кадра.
+source_writer = cv2.VideoWriter(
+    str(source_video_path), fourcc, fps, (width, height))
+for shift in np.linspace(-30, 30, 30).astype(int):
+    transform = np.float32([[1, 0, shift], [0, 1, 0]])
+    shifted = cv2.warpAffine(frame, transform, (width, height),
+                             borderMode=cv2.BORDER_REFLECT)
+    source_writer.write(shifted)
+source_writer.release()
+
+yolo = YOLO('yolo11n.pt')
+capture = cv2.VideoCapture(str(source_video_path))
+annotated_writer = cv2.VideoWriter(
+    str(annotated_video_path), fourcc, fps, (width, height))
+processed_frames = 0
+while True:
+    ok, video_frame = capture.read()
+    if not ok:
+        break
+    result = yolo.predict(video_frame, verbose=False)[0]
+    annotated_writer.write(result.plot())
+    processed_frames += 1
+capture.release()
+annotated_writer.release()
+
+yolo.save(str(saved_model_path))
+reloaded_yolo = YOLO(str(saved_model_path))
+before = yolo.predict(frame, verbose=False)[0]
+after = reloaded_yolo.predict(frame, verbose=False)[0]
+before_classes = before.boxes.cls.cpu().numpy().astype(int)
+after_classes = after.boxes.cls.cpu().numpy().astype(int)
+before_confidence = before.boxes.conf.cpu().numpy()
+after_confidence = after.boxes.conf.cpu().numpy()
+assert np.array_equal(before_classes, after_classes)
+assert np.allclose(before_confidence, after_confidence, atol=1e-5)
+
+print('Обработано кадров:', processed_frames)
+print('Классы контрольного кадра:', before_classes.tolist())
+print('Размеченное видео:', annotated_video_path)
+print('Сохранённая модель:', saved_model_path)"""))
+
+nb.add(md("""`VideoCapture` последовательно читает кадры, YOLO возвращает боксы,
+классы и confidence, `result.plot()` формирует размеченный кадр, а
+`VideoWriter` собирает кадры в новый файл. Проверка после повторной загрузки
+защищает от ситуации, когда сохранён не тот checkpoint или изменилась
+конфигурация модели."""))
+
 nb.add(md("""---
 ## Итог
 
 В решении есть NumPy-реализация свёртки, собственная VGG-style CNN с настоящими
-циклами train/eval и двухэтапный transfer learning ResNet18 на CIFAR-10. Все
-табличные значения получаются при запуске; тестовая выборка нигде не используется
-для обучения или выбора лучшей эпохи."""))
+циклами train/eval, transfer learning ResNet18 на полной и малой выборках, а
+также YOLO-видеопайплайн с OpenCV и проверкой save/load. Все табличные значения
+получаются при запуске; test нигде не используется для обучения или выбора
+лучшей эпохи."""))
 
 path = "M4-cnn/attachments/kim-04-cnn-solution.ipynb"
-nb.save(path)
+nb.save(path, preserve_outputs=True)
 print(f"Сохранён: {path}  ({nb.cell_count()} ячеек)")

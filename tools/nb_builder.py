@@ -15,6 +15,7 @@
 """
 import json
 import uuid
+from collections import defaultdict, deque
 from pathlib import Path
 
 
@@ -129,12 +130,27 @@ class Notebook:
             "nbformat_minor": self.nbformat_minor,
         }
 
-    def save(self, path: str):
-        """Сохранить ноутбук в файл."""
+    def save(self, path: str, preserve_outputs: bool = False):
+        """Сохранить ноутбук, при необходимости сохранив выводы неизменённых ячеек."""
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
+        notebook = self.build()
+        if preserve_outputs and p.exists():
+            previous = json.loads(p.read_text(encoding="utf-8"))
+            previous_code = defaultdict(deque)
+            for cell in previous.get("cells", []):
+                if cell.get("cell_type") == "code":
+                    previous_code[tuple(cell.get("source", []))].append(cell)
+            for cell in notebook["cells"]:
+                if cell.get("cell_type") != "code":
+                    continue
+                matches = previous_code.get(tuple(cell.get("source", [])))
+                if matches:
+                    old_cell = matches.popleft()
+                    cell["execution_count"] = old_cell.get("execution_count")
+                    cell["outputs"] = old_cell.get("outputs", [])
         with open(p, "w", encoding="utf-8") as f:
-            json.dump(self.build(), f, ensure_ascii=False, indent=1)
+            json.dump(notebook, f, ensure_ascii=False, indent=1)
         return p
 
     def cell_count(self) -> int:
