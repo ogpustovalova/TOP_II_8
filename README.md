@@ -121,8 +121,10 @@
 ├── LICENSE.md
 ├── CONTRIBUTING.md
 ├── docs/
-├── M1-module-name/
-├── M2-module-name/
+├── M1-basics/          # было M1-module-name
+├── M2-cnn/             # было M2-module-name
+├── M3-rnn-transformer/ # новое 
+├── M4-generative-rl/   # новое
 ├── Project/
 ├── Exam/
 ├── methodical-guidelines/
