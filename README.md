@@ -134,7 +134,7 @@
 └── other/
 ```
 
-Подробное дерево приведено в файле [`repository-tree.txt`](repository-tree.txt).
+<!-- Подробное дерево приведено в файле [`repository-tree.txt`](repository-tree.txt). -->
 
 ## 7. Порядок заполнения
 
