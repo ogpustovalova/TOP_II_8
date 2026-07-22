@@ -567,7 +567,7 @@ try:
 except ImportError:
     subprocess.check_call([
         sys.executable, '-m', 'pip', 'install', '-q',
-        'ultralytics', 'opencv-python-headless',
+        'ultralytics',
     ])
     import cv2
     from ultralytics import YOLO
