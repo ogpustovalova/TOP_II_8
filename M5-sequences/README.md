@@ -18,9 +18,20 @@
 |---|---|---|---|
 | [КИМ 5.1. Рекуррентные сети и 1D-CNN для последовательностей](kim-01-sequences.md) | Regex, морфологический и синтаксический разбор, классификация LSTM/GRU/1D-CNN, прогноз временного ряда | Выбирает гиперпараметры LSTM/GRU и применяет полный базовый конвейер разбора текста | Ноутбук + защита |
 
+## Протокол данных М5
+
+Для классификации используется только `train.jsonl` Russian Reviews
+Classification в revision `0f67d914f396ce22917dc6463ec619799b3b08d2` (SHA-256
+`0b97698a0c6871437d17e07c973018af9b8c9230ec9048d85cb875cc2c2470ea`). После
+удаления neutral при `seed=42` выбираются по 500 negative/positive и локально
+делятся стратифицированно на train/validation/test 640/160/200. Локальный test
+получен из опубликованного `train` и не является официальным test-сплитом;
+полученные метрики нельзя заявлять как метрики official test набора.
+
 ## Связанные ресурсы
 
-- [Датасеты](../resources/datasets/README.md) — отзывы банков (banks.csv), Jena Climate
+- [Датасеты](../resources/datasets/README.md) — Russian Reviews Classification,
+  Jena Climate
 - [Python-библиотеки](../resources/software/python-libs/README.md) — pymorphy3, nltk
-- Исходные материалы курса: `dlpython_course/05_text_processing/`, `06_rnn/`,
+- Исходные материалы курса: [`dlpython_course/05_text_processing/`](https://github.com/sozykin/dlpython_course), `06_rnn/`,
   `07_cnn1d/`, `08_timeseries/`

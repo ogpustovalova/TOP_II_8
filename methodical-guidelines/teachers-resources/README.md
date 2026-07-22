@@ -1,15 +1,15 @@
 # Методические указания преподавателям по использованию ресурсов
 
-Как использовать материалы курса `dlpython_course`, каталог ресурсов репозитория
+Как использовать материалы курса [`dlpython_course`](https://github.com/sozykin/dlpython_course), каталог ресурсов репозитория
 и внешние источники при подготовке и проведении КИМ по дисциплине «Основы
 нейронных сетей».
 
 ## 1. Исходные материалы курса
 
-Ноутбуки курса `dlpython_course` (вне репозитория, у преподавателя) — основной
+Ноутбуки курса [`dlpython_course`](https://github.com/sozykin/dlpython_course) — основной
 источник готовых примеров для наполнения ноутбуков-заданий. Соответствие модулям:
 
-| Модуль | Ноутбуки `dlpython_course` |
+| Модуль | Ноутбуки [`dlpython_course`](https://github.com/sozykin/dlpython_course) |
 |---|---|
 | 1. Искусственные НС | `01_introduction/fashion_mnist_dense.ipynb`, `01_introduction/pytorch/fashion_mnist_dense.ipynb` |
 | 2. Обучение НС | `01_introduction/fashion_mnist_prevent_overfitting.ipynb` (кривые, регуляризация); PyTorch-вариант (явный цикл обучения) |

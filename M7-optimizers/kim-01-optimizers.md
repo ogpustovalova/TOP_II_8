@@ -92,8 +92,8 @@
 
 ## Источники
 
-- `dlpython_course/keras_callbacks/lr_scheduler.ipynb` (управление lr).
-- `dlpython_course/keras_callbacks/early_stopping.ipynb` (ранняя остановка).
-- `dlpython_course/02_cnn/tensorflow/fashion_mnist.ipynb` (пример совместного
+- [`dlpython_course/keras_callbacks/lr_scheduler.ipynb`](https://github.com/sozykin/dlpython_course) (управление lr).
+- [`dlpython_course/keras_callbacks/early_stopping.ipynb`](https://github.com/sozykin/dlpython_course) (ранняя остановка).
+- [`dlpython_course/02_cnn/tensorflow/fashion_mnist.ipynb`](https://github.com/sozykin/dlpython_course) (пример совместного
   использования `ReduceLROnPlateau`, `EarlyStopping`, `adamw` — образец).
 - Статья: Kingma & Ba, «Adam: A Method for Stochastic Optimization», 2014.

@@ -21,5 +21,5 @@
 
 - [Датасеты](../resources/datasets/README.md) — MNIST, Fashion-MNIST
 - [Python-библиотеки](../resources/software/python-libs/README.md) — Keras, PyTorch
-- Исходные материалы курса: в `dlpython_course` готовых ноутбуков по AE/VAE нет —
+- Исходные материалы курса: в [`dlpython_course`](https://github.com/sozykin/dlpython_course) готовых ноутбуков по AE/VAE нет —
   КИМ строится на основе теории.

@@ -104,7 +104,7 @@ nb.add(sol("""def iterate_minibatches(X, y, batch_size, shuffle=True):
         yield X[batch_indices], y[batch_indices]
 
 lr = 0.1
-epochs = 30
+epochs = 50
 batch_size = 64
 train_losses, val_losses = [], []
 train_accs, val_accs = [], []
@@ -132,16 +132,19 @@ for epoch in range(epochs):
 
 print(f'Итоговая val_acc NumPy: {val_accs[-1]:.4f}')"""))
 
-nb.add(md("""При фиксированном seed итоговая `val_acc` обычно находится примерно в
-диапазоне **0.83–0.85**. Небольшие отличия возможны между версиями NumPy и BLAS."""))
+nb.add(md("""Пятьдесят эпох соответствуют требуемому диапазону 50–100 эпох для
+ручной сети. При фиксированном seed итоговая `val_acc` обычно находится примерно
+в диапазоне **0.83–0.85**. Небольшие отличия возможны между версиями NumPy и
+BLAS."""))
 
 nb.add(md("### 6. Кривые обучения"))
-nb.add(sol("""fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-ax[0].plot(train_losses, label='train')
-ax[0].plot(val_losses, label='val')
+nb.add(sol("""numpy_epochs = np.arange(1, epochs + 1)
+fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+ax[0].plot(numpy_epochs, train_losses, label='train')
+ax[0].plot(numpy_epochs, val_losses, label='val')
 ax[0].set_title('Loss')
-ax[1].plot(train_accs, label='train')
-ax[1].plot(val_accs, label='val')
+ax[1].plot(numpy_epochs, train_accs, label='train')
+ax[1].plot(numpy_epochs, val_accs, label='val')
 ax[1].set_title('Accuracy')
 for a in ax:
     a.set_xlabel('эпоха')
@@ -391,124 +394,247 @@ nb.add(md("""Выбор выполняется только по validation accu
 nb.add(md("""---
 ## Часть В. Переобучение и регуляризация
 
-Чтобы получить заметное переобучение без долгого запуска, увеличим ёмкость сети,
-а обучающую выборку этой части ограничим 2 000 объектами. Validation-выборка
-остаётся прежней и не участвует в обновлении весов."""))
+Чтобы получить заметное переобучение без лишнего времени работы, используем сеть,
+число параметров которой существенно больше числа обучающих объектов, и фиксируем
+подвыборки из 800 train и 1 000 validation объектов. Один непрерывный запуск без
+регуляризации до 200 эпох точно покрывает checkpoints 10 / 50 / 100 / 200.
+Dropout и L2 запускаются отдельно в том же протоколе."""))
 
-nb.add(md("### 10. Сеть высокой ёмкости без регуляризации"))
-nb.add(sol("""PART_C_TRAIN_SIZE = 2_000
+nb.add(md("### 10. Единый протокол эксперимента до 200 эпох"))
+nb.add(sol("""import copy
+
+PART_C_TRAIN_SIZE = 800
+PART_C_VAL_SIZE = 1_000
+PART_C_EPOCHS = 200
+PART_C_BATCH_SIZE = 128
+CHECKPOINT_EPOCHS = (10, 50, 100, 200)
+EARLY_STOPPING_PATIENCE = 15
+
 part_c_ds = TensorDataset(
     X_tr_t[:PART_C_TRAIN_SIZE],
     y_tr_t[:PART_C_TRAIN_SIZE],
 )
-part_c_loader = make_loader(part_c_ds, batch_size=64, seed=SEED)
-
-set_torch_seed(SEED)
-overfit_model = nn.Sequential(
-    nn.Linear(784, 512), nn.ReLU(),
-    nn.Linear(512, 512), nn.ReLU(),
-    nn.Linear(512, 10),
-).to(device)
-overfit_optimizer = optim.Adam(overfit_model.parameters(), lr=1e-3)
-
-overfit_history = train_pytorch(
-    overfit_model, part_c_loader, criterion, overfit_optimizer, device,
-    epochs=50, X_val=X_va_t, y_val=y_va_t,
-)
-overfit_val_loss, overfit_val_acc = evaluate(
-    overfit_model, X_va_t, y_va_t, criterion, device,
-)
-print(f'Без регуляризации: val_loss={overfit_val_loss:.4f}, '
-      f'val_acc={overfit_val_acc:.4f}')"""))
-
-nb.add(md("### 11. Dropout, L2 и ручная ранняя остановка"))
-nb.add(sol("""import copy
-
-set_torch_seed(SEED)
-regularized_model = nn.Sequential(
-    nn.Linear(784, 512), nn.ReLU(), nn.Dropout(0.5),
-    nn.Linear(512, 512), nn.ReLU(), nn.Dropout(0.5),
-    nn.Linear(512, 10),
-).to(device)
-regularized_optimizer = optim.Adam(
-    regularized_model.parameters(),
-    lr=1e-3,
-    weight_decay=1e-4,
-)
-regularized_loader = make_loader(part_c_ds, batch_size=64, seed=SEED)
-
-max_epochs = 50
-patience = 7
-best_val_loss = float('inf')
-best_state = copy.deepcopy(regularized_model.state_dict())
-bad_epochs = 0
-regularized_history = {
-    'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
-}
 X_part_c, y_part_c = part_c_ds.tensors
+X_part_c_val = X_va_t[:PART_C_VAL_SIZE]
+y_part_c_val = y_va_t[:PART_C_VAL_SIZE]
 
-for epoch in range(max_epochs):
-    regularized_model.train()
-    total_loss = 0.0
-    for xb, yb in regularized_loader:
-        xb = xb.to(device, non_blocking=True)
-        yb = yb.to(device, non_blocking=True)
 
-        regularized_optimizer.zero_grad()
-        logits = regularized_model(xb)
-        loss = criterion(logits, yb)
-        loss.backward()
-        regularized_optimizer.step()
-        total_loss += loss.item() * len(xb)
+def make_part_c_model(dropout=0.0):
+    layers = [nn.Linear(784, 128), nn.ReLU()]
+    if dropout > 0:
+        layers.append(nn.Dropout(dropout))
+    layers.extend([nn.Linear(128, 64), nn.ReLU()])
+    if dropout > 0:
+        layers.append(nn.Dropout(dropout))
+    layers.append(nn.Linear(64, 10))
+    return nn.Sequential(*layers)
 
-    _, train_acc = evaluate(
-        regularized_model, X_part_c, y_part_c, criterion, device,
+
+def train_part_c(name, dropout=0.0, weight_decay=0.0,
+                 track_early_stopping=False):
+    set_torch_seed(SEED)
+    model = make_part_c_model(dropout).to(device)
+    loader = make_loader(part_c_ds, batch_size=PART_C_BATCH_SIZE, seed=SEED)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=weight_decay)
+    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
+
+    # Параллельно с полным 200-эпоховым прогоном фиксируем точный момент, когда
+    # EarlyStopping остановил бы ту же базовую траекторию, и его лучшие веса.
+    es_best_loss = float('inf')
+    es_best_epoch = 0
+    es_best_state = copy.deepcopy(model.state_dict())
+    es_bad_epochs = 0
+    es_stop_epoch = None
+
+    for epoch in range(1, PART_C_EPOCHS + 1):
+        model.train()
+        for xb, yb in loader:
+            xb = xb.to(device, non_blocking=True)
+            yb = yb.to(device, non_blocking=True)
+            optimizer.zero_grad()
+            loss = criterion(model(xb), yb)
+            loss.backward()
+            optimizer.step()
+
+        train_loss, train_acc = evaluate(
+            model, X_part_c, y_part_c, criterion, device,
+        )
+        val_loss, val_acc = evaluate(
+            model, X_part_c_val, y_part_c_val, criterion, device,
+        )
+        history['train_loss'].append(train_loss)
+        history['train_acc'].append(train_acc)
+        history['val_loss'].append(val_loss)
+        history['val_acc'].append(val_acc)
+
+        if track_early_stopping and es_stop_epoch is None:
+            if val_loss < es_best_loss:
+                es_best_loss = val_loss
+                es_best_epoch = epoch
+                es_best_state = copy.deepcopy(model.state_dict())
+                es_bad_epochs = 0
+            else:
+                es_bad_epochs += 1
+                if es_bad_epochs >= EARLY_STOPPING_PATIENCE:
+                    es_stop_epoch = epoch
+
+        if epoch in CHECKPOINT_EPOCHS:
+            print(
+                f'{name:<18} epoch={epoch:3d}: '
+                f'train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, '
+                f'train_acc={train_acc:.4f}, val_acc={val_acc:.4f}'
+            )
+
+    if es_stop_epoch is None:
+        es_stop_epoch = PART_C_EPOCHS
+
+    return {
+        'history': history,
+        'es_stop_epoch': es_stop_epoch,
+        'es_best_epoch': es_best_epoch,
+        'es_best_state': es_best_state,
+    }
+
+
+part_c_runs = {
+    'Без регуляризации': train_part_c(
+        'Без регуляризации', track_early_stopping=True,
+    ),
+    'Dropout': train_part_c('Dropout', dropout=0.4),
+    'L2': train_part_c('L2', weight_decay=1e-4),
+}"""))
+
+nb.add(md("""`Dropout(0.4)` и `weight_decay=1e-4` зафиксированы до запуска как
+типичные стартовые значения, а не выбраны по полученной validation-таблице.
+Архитектура, данные, инициализация, порядок mini-batches, optimizer и бюджет эпох
+не меняются, поэтому разница метрик относится к исследуемому методу. Улучшение
+не предполагается заранее: если строка метода хуже baseline, этот метод при
+данной настройке отвергается или настраивается в отдельном validation-протоколе."""))
+
+nb.add(md("### 11. Checkpoints 10 / 50 / 100 / 200 и признаки переобучения"))
+nb.add(sol("""baseline_history = part_c_runs['Без регуляризации']['history']
+
+print(f"{'Эпоха':>6} {'train loss':>11} {'val loss':>10} "
+      f"{'train acc':>10} {'val acc':>9} {'acc gap':>9}")
+for epoch in CHECKPOINT_EPOCHS:
+    i = epoch - 1
+    gap = baseline_history['train_acc'][i] - baseline_history['val_acc'][i]
+    print(
+        f"{epoch:>6d} {baseline_history['train_loss'][i]:>11.4f} "
+        f"{baseline_history['val_loss'][i]:>10.4f} "
+        f"{baseline_history['train_acc'][i]:>10.4f} "
+        f"{baseline_history['val_acc'][i]:>9.4f} {gap:>9.4f}"
     )
-    val_loss, val_acc = evaluate(
-        regularized_model, X_va_t, y_va_t, criterion, device,
-    )
-    regularized_history['train_loss'].append(total_loss / len(part_c_ds))
-    regularized_history['train_acc'].append(train_acc)
-    regularized_history['val_loss'].append(val_loss)
-    regularized_history['val_acc'].append(val_acc)
 
-    if val_loss < best_val_loss:
-        best_val_loss = val_loss
-        best_state = copy.deepcopy(regularized_model.state_dict())
-        bad_epochs = 0
-    else:
-        bad_epochs += 1
-        if bad_epochs >= patience:
-            print(f'Early stopping: эпоха {epoch + 1}, '
-                  f'лучшая val_loss={best_val_loss:.4f}')
-            break
-
-# Восстанавливаем параметры с лучшей validation loss, а не последнюю эпоху.
-regularized_model.load_state_dict(best_state)
-regularized_val_loss, regularized_val_acc = evaluate(
-    regularized_model, X_va_t, y_va_t, criterion, device,
+best_baseline_epoch = int(np.argmin(baseline_history['val_loss'])) + 1
+val_loss_growth = (
+    baseline_history['val_loss'][-1]
+    - baseline_history['val_loss'][best_baseline_epoch - 1]
 )
-print(f'С регуляризацией: val_loss={regularized_val_loss:.4f}, '
-      f'val_acc={regularized_val_acc:.4f}')"""))
+print(f'Минимальная val_loss достигнута на эпохе {best_baseline_epoch}.')
+print(f'Рост val_loss от минимума к эпохе 200: {val_loss_growth:+.4f}')
 
-nb.add(md("### 12. Сравнение кривых"))
+epochs_part_c = np.arange(1, PART_C_EPOCHS + 1)
+fig, ax = plt.subplots(1, 2, figsize=(13, 4))
+ax[0].plot(epochs_part_c, baseline_history['train_loss'], label='train')
+ax[0].plot(epochs_part_c, baseline_history['val_loss'], label='validation')
+ax[0].set_title('Без регуляризации: loss')
+ax[1].plot(epochs_part_c, baseline_history['train_acc'], label='train')
+ax[1].plot(epochs_part_c, baseline_history['val_acc'], label='validation')
+ax[1].set_title('Без регуляризации: accuracy')
+for a in ax:
+    for checkpoint in CHECKPOINT_EPOCHS:
+        a.axvline(checkpoint, color='grey', alpha=0.2, linewidth=1)
+    a.set_xlabel('эпоха')
+    a.legend()
+    a.grid(True)
+plt.tight_layout()
+plt.show()"""))
+
+nb.add(md("""Переобучение подтверждается не одной финальной цифрой, а динамикой:
+train loss продолжает падать и разрыв train/validation accuracy увеличивается,
+тогда как validation loss после своего минимума растёт или стагнирует. Таблица и
+вертикальные линии позволяют проверить это именно на требуемых длительностях."""))
+
+nb.add(md("### 12. Раздельное сравнение Dropout, L2 и EarlyStopping"))
+nb.add(md("""EarlyStopping оценивается без дублирования базового обучения: как
+только исчерпана `patience`, фиксируются эпоха остановки и лучшие на тот момент
+веса. Базовый цикл продолжает выполняться только ради обязательного checkpoint
+200; метрики строки EarlyStopping вычисляются после восстановления зафиксированных
+весов, поэтому совпадают с отдельным запуском при тех же seed и порядке batches."""))
+nb.add(sol("""baseline_run = part_c_runs['Без регуляризации']
+early_stopped_model = make_part_c_model().to(device)
+early_stopped_model.load_state_dict(baseline_run['es_best_state'])
+es_train_loss, es_train_acc = evaluate(
+    early_stopped_model, X_part_c, y_part_c, criterion, device,
+)
+es_val_loss, es_val_acc = evaluate(
+    early_stopped_model, X_part_c_val, y_part_c_val, criterion, device,
+)
+
+
+def final_row(method, run):
+    history = run['history']
+    return {
+        'method': method,
+        'trained_epochs': PART_C_EPOCHS,
+        'selected_epoch': PART_C_EPOCHS,
+        'train_loss': history['train_loss'][-1],
+        'val_loss': history['val_loss'][-1],
+        'train_acc': history['train_acc'][-1],
+        'val_acc': history['val_acc'][-1],
+    }
+
+
+regularization_rows = [
+    final_row('Без регуляризации', part_c_runs['Без регуляризации']),
+    final_row('Только Dropout(0.4)', part_c_runs['Dropout']),
+    final_row('Только L2(1e-4)', part_c_runs['L2']),
+    {
+        'method': f'EarlyStopping(patience={EARLY_STOPPING_PATIENCE})',
+        'trained_epochs': baseline_run['es_stop_epoch'],
+        'selected_epoch': baseline_run['es_best_epoch'],
+        'train_loss': es_train_loss,
+        'val_loss': es_val_loss,
+        'train_acc': es_train_acc,
+        'val_acc': es_val_acc,
+    },
+]
+
+baseline_val_acc = regularization_rows[0]['val_acc']
+print(f"{'Метод':<28} {'эпох':>5} {'выбрана':>7} {'val loss':>9} "
+      f"{'val acc':>8} {'acc gap':>8} {'Δ val acc':>10}")
+for row in regularization_rows:
+    accuracy_gap = row['train_acc'] - row['val_acc']
+    val_accuracy_delta = row['val_acc'] - baseline_val_acc
+    print(
+        f"{row['method']:<28} {row['trained_epochs']:>5d} "
+        f"{row['selected_epoch']:>7d} {row['val_loss']:>9.4f} "
+        f"{row['val_acc']:>8.4f} {accuracy_gap:>8.4f} "
+        f"{val_accuracy_delta:>+10.4f}"
+    )
+
+best_method = max(regularization_rows[1:], key=lambda row: row['val_acc'])
+print('Лучшая отдельная регуляризация по val accuracy:', best_method['method'])
+print(
+    f"EarlyStopping остановил бы обучение на эпохе "
+    f"{baseline_run['es_stop_epoch']} и восстановил веса эпохи "
+    f"{baseline_run['es_best_epoch']}."
+)"""))
+
 nb.add(sol("""fig, ax = plt.subplots(1, 2, figsize=(13, 4))
-ax[0].plot(overfit_history['train_loss'], label='train, без регул.', color='C0')
-ax[0].plot(overfit_history['val_loss'], label='val, без регул.', color='C1')
-ax[0].plot(regularized_history['train_loss'], label='train, Dropout+L2+ES',
-           color='C0', linestyle='--')
-ax[0].plot(regularized_history['val_loss'], label='val, Dropout+L2+ES',
-           color='C1', linestyle='--')
-ax[0].set_title('Loss')
+for name, run in part_c_runs.items():
+    history = run['history']
+    ax[0].plot(epochs_part_c, history['val_loss'], label=name)
+    ax[1].plot(epochs_part_c, history['val_acc'], label=name)
 
-ax[1].plot(overfit_history['train_acc'], label='train, без регул.', color='C0')
-ax[1].plot(overfit_history['val_acc'], label='val, без регул.', color='C1')
-ax[1].plot(regularized_history['train_acc'], label='train, Dropout+L2+ES',
-           color='C0', linestyle='--')
-ax[1].plot(regularized_history['val_acc'], label='val, Dropout+L2+ES',
-           color='C1', linestyle='--')
-ax[1].set_title('Accuracy')
-
+es_epoch = baseline_run['es_best_epoch']
+ax[0].scatter(es_epoch, es_val_loss, marker='*', s=140,
+              label='EarlyStopping: лучшие веса', zorder=5)
+ax[1].scatter(es_epoch, es_val_acc, marker='*', s=140,
+              label='EarlyStopping: лучшие веса', zorder=5)
+ax[0].set_title('Validation loss')
+ax[1].set_title('Validation accuracy')
 for a in ax:
     a.set_xlabel('эпоха')
     a.legend()
@@ -516,12 +642,12 @@ for a in ax:
 plt.tight_layout()
 plt.show()"""))
 
-nb.add(md("""**Вывод:** у сети высокой ёмкости train loss продолжает уменьшаться,
-когда validation loss уже перестаёт улучшаться — это признак переобучения.
-`Dropout(0.5)` случайно отключает признаки во время обучения, `weight_decay`
-штрафует большие веса, а ручная ранняя остановка возвращает состояние модели с
-минимальной validation loss. Вместе эти методы уменьшают разрыв между train и
-validation и не тратят время на заведомо ухудшающиеся эпохи."""))
+nb.add(md("""**Вывод по эксперименту.** Методы не объединены: эффект каждого
+виден в отдельной строке и на общей validation-кривой. Dropout в train случайно
+зануляет активации, L2 штрафует большие веса, а EarlyStopping не меняет loss, но
+останавливает базовую траекторию после 15 эпох без улучшения и восстанавливает её
+лучшие веса. Конкретный выбор делается по напечатанным `val_acc`, `val_loss`,
+разрыву train/validation и экономии эпох, а не предполагается заранее."""))
 
 path = "M2-training/attachments/kim-02-backprop-training-solution.ipynb"
 nb.save(path, preserve_outputs=True)

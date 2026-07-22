@@ -123,9 +123,9 @@ nb.add(placeholder("кривые train/val"))
 
 nb.add(md("""### 11. Регуляризация
 
-Примените хотя бы один метод регуляризации: слой `Dropout`, `L2`, или
-`EarlyStopping`. Сравните кривые до и после — расхождение train/val должно
-уменьшиться."""))
+В одном протоколе отдельно примените `Dropout`, `L2` и `EarlyStopping` с
+восстановлением лучших весов. Сравните каждый метод с baseline по validation-
+метрикам и разрыву train/validation; улучшение не предполагайте заранее."""))
 nb.add(placeholder("Dropout / L2 / EarlyStopping"))
 
 nb.add(md("""### 12. Вывод

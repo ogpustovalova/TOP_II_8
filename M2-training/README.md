@@ -21,5 +21,5 @@
 
 - [Python-библиотеки](../resources/software/python-libs/README.md) — NumPy, PyTorch, TensorFlow/Keras
 - [Датасеты](../resources/datasets/README.md) — Fashion-MNIST
-- Исходные материалы курса: `dlpython_course/01_introduction/fashion_mnist_prevent_overfitting.ipynb`,
-  `dlpython_course/01_introduction/pytorch/fashion_mnist_dense.ipynb`
+- Исходные материалы курса: [`dlpython_course/01_introduction/fashion_mnist_prevent_overfitting.ipynb`](https://github.com/sozykin/dlpython_course),
+  [`dlpython_course/01_introduction/pytorch/fashion_mnist_dense.ipynb`](https://github.com/sozykin/dlpython_course)

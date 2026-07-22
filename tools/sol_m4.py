@@ -254,7 +254,7 @@ def train_one_epoch(model, loader, optimizer, scaler, scheduler=None,
         targets = targets.to(device, non_blocking=PIN_MEMORY)
         optimizer.zero_grad(set_to_none=True)
 
-        with torch.cuda.amp.autocast(enabled=USE_AMP):
+        with torch.amp.autocast(device_type=device.type, enabled=USE_AMP):
             logits = model(inputs)
             loss = criterion(logits, targets)
         scaler.scale(loss).backward()
@@ -289,7 +289,7 @@ def evaluate(model, loader):
 def fit(model, train_loader, val_loader, optimizer, epochs, scheduler=None,
         frozen_backbone=False, phase='model'):
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
-    scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
+    scaler = torch.amp.GradScaler(device.type, enabled=USE_AMP)
     best_val_acc = -1.0
     best_state = copy.deepcopy(model.state_dict())
     started = time.perf_counter()
@@ -554,7 +554,8 @@ nb.add(md("""---
 Эта часть требует `ultralytics` и OpenCV. При первом запуске скачиваются веса
 YOLO и открытое тестовое изображение. Из изображения создаётся короткое видео,
 чтобы весь конвейер оставался воспроизводимым без внешнего видеофайла."""))
-nb.add(sol("""import subprocess
+nb.add(sol("""import logging
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -562,6 +563,7 @@ from pathlib import Path
 try:
     import cv2
     from ultralytics import YOLO
+    from ultralytics.utils import LOGGER
 except ImportError:
     subprocess.check_call([
         sys.executable, '-m', 'pip', 'install', '-q',
@@ -569,6 +571,10 @@ except ImportError:
     ])
     import cv2
     from ultralytics import YOLO
+    from ultralytics.utils import LOGGER
+
+# Retry-сообщения загрузчика могут содержать временный подписанный redirect URL.
+LOGGER.setLevel(logging.ERROR)
 
 pipeline_dir = Path('data/cv_pipeline')
 pipeline_dir.mkdir(parents=True, exist_ok=True)
@@ -590,6 +596,8 @@ fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 # Воспроизводимое короткое видео: плавный горизонтальный сдвиг тестового кадра.
 source_writer = cv2.VideoWriter(
     str(source_video_path), fourcc, fps, (width, height))
+if not source_writer.isOpened():
+    raise RuntimeError('OpenCV не открыл VideoWriter для исходного видео')
 for shift in np.linspace(-30, 30, 30).astype(int):
     transform = np.float32([[1, 0, shift], [0, 1, 0]])
     shifted = cv2.warpAffine(frame, transform, (width, height),
@@ -599,8 +607,13 @@ source_writer.release()
 
 yolo = YOLO('yolo11n.pt')
 capture = cv2.VideoCapture(str(source_video_path))
+if not capture.isOpened():
+    raise RuntimeError('OpenCV не открыл созданное исходное видео')
 annotated_writer = cv2.VideoWriter(
     str(annotated_video_path), fourcc, fps, (width, height))
+if not annotated_writer.isOpened():
+    capture.release()
+    raise RuntimeError('OpenCV не открыл VideoWriter для размеченного видео')
 processed_frames = 0
 while True:
     ok, video_frame = capture.read()
@@ -612,6 +625,12 @@ while True:
 capture.release()
 annotated_writer.release()
 
+if processed_frames != 30:
+    raise RuntimeError(f'Обработано {processed_frames} кадров вместо 30')
+for video_path in (source_video_path, annotated_video_path):
+    if not video_path.exists() or video_path.stat().st_size == 0:
+        raise RuntimeError(f'Видео не создано или пусто: {video_path}')
+
 yolo.save(str(saved_model_path))
 reloaded_yolo = YOLO(str(saved_model_path))
 before = yolo.predict(frame, verbose=False)[0]
@@ -620,8 +639,11 @@ before_classes = before.boxes.cls.cpu().numpy().astype(int)
 after_classes = after.boxes.cls.cpu().numpy().astype(int)
 before_confidence = before.boxes.conf.cpu().numpy()
 after_confidence = after.boxes.conf.cpu().numpy()
+if len(before_classes) == 0 or len(after_classes) == 0:
+    raise RuntimeError('YOLO не обнаружила объекты на контрольном кадре')
 assert np.array_equal(before_classes, after_classes)
-assert np.allclose(before_confidence, after_confidence, atol=1e-5)
+# Сериализация fused-графа даёт небольшую погрешность GPU-инференса.
+assert np.allclose(before_confidence, after_confidence, atol=1e-3)
 
 print('Обработано кадров:', processed_frames)
 print('Классы контрольного кадра:', before_classes.tolist())

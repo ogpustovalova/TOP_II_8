@@ -53,7 +53,7 @@ nb.add(md("""---
 CIFAR-10: 60 000 RGB-изображений 32×32, 10 классов."""))
 
 nb.add(md("### 3. Загрузка CIFAR-10 и подготовка"))
-nb.add(placeholder("load + /255 + one-hot"))
+nb.add(placeholder("load + /255 + integer class labels for sparse loss"))
 
 nb.add(md("""### 4. Архитектура CNN в стиле VGG
 

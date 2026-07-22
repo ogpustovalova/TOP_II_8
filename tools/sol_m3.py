@@ -18,9 +18,10 @@ nb.add(md("""### 0. Импорт, воспроизводимость и выбо
 запуск на том же оборудовании даёт воспроизводимый результат."""))
 nb.add(sol("""import numpy as np
 import matplotlib.pyplot as plt
+import time
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 from sklearn.datasets import fetch_california_housing
 from sklearn.model_selection import train_test_split
 
@@ -136,9 +137,9 @@ nb.add(md("""### 4. Обучение по MSE
 
 Последний слой не имеет активации: задача регрессионная, поэтому выход не нужно
 ограничивать. `MSELoss` усредняет квадраты ошибок по мини-батчу. После каждой эпохи
-считаем validation MSE/MAE, сохраняя в памяти параметры с лучшим validation MSE.
-Early stopping ограничивает время работы, а тестовая выборка в выборе эпохи не
-участвует."""))
+считаем train и validation MSE/MAE, сохраняя в памяти параметры с лучшим
+validation MSE. Early stopping ограничивает время работы, а тестовая выборка в
+выборе эпохи не участвует."""))
 nb.add(sol("""mse_loss = nn.MSELoss()
 reg_optimizer = torch.optim.Adam(housing_model.parameters(), lr=1e-3)
 
@@ -146,6 +147,7 @@ reg_optimizer = torch.optim.Adam(housing_model.parameters(), lr=1e-3)
 def train_regressor_one_epoch(model, loader):
     model.train()
     squared_error_sum = 0.0
+    absolute_error_sum = 0.0
     n = 0
     for xb, yb in loader:
         xb = xb.to(device, non_blocking=pin_memory)
@@ -158,8 +160,9 @@ def train_regressor_one_epoch(model, loader):
         reg_optimizer.step()
 
         squared_error_sum += loss.item() * yb.numel()
+        absolute_error_sum += (predictions.detach() - yb).abs().sum().item()
         n += yb.numel()
-    return squared_error_sum / n
+    return squared_error_sum / n, absolute_error_sum / n
 
 
 @torch.inference_mode()
@@ -181,6 +184,7 @@ def evaluate_regressor(model, loader):
 MAX_EPOCHS = 100
 PATIENCE = 15
 train_mse_history = []
+train_mae_history = []
 val_mse_history = []
 val_mae_history = []
 best_val_mse = float("inf")
@@ -188,9 +192,12 @@ best_state = None
 epochs_without_improvement = 0
 
 for epoch in range(1, MAX_EPOCHS + 1):
-    train_mse = train_regressor_one_epoch(housing_model, train_reg_loader)
+    train_mse, train_mae = train_regressor_one_epoch(
+        housing_model, train_reg_loader
+    )
     val_mse, val_mae = evaluate_regressor(housing_model, val_reg_loader)
     train_mse_history.append(train_mse)
+    train_mae_history.append(train_mae)
     val_mse_history.append(val_mse)
     val_mae_history.append(val_mae)
 
@@ -207,7 +214,8 @@ for epoch in range(1, MAX_EPOCHS + 1):
     if epoch == 1 or epoch % 10 == 0:
         print(
             f"Эпоха {epoch:3d}: train MSE={train_mse:.4f}, "
-            f"val MSE={val_mse:.4f}, val MAE={val_mae:.4f}"
+            f"val MSE={val_mse:.4f}, train MAE={train_mae:.4f}, "
+            f"val MAE={val_mae:.4f}"
         )
 
     if epochs_without_improvement >= PATIENCE:
@@ -225,8 +233,10 @@ axes[0].set(title="MSE", xlabel="Эпоха", ylabel="MSE")
 axes[0].legend()
 axes[0].grid(True)
 
-axes[1].plot(epochs_ran, val_mae_history, color="tab:orange")
-axes[1].set(title="Validation MAE", xlabel="Эпоха", ylabel="MAE")
+axes[1].plot(epochs_ran, train_mae_history, label="train")
+axes[1].plot(epochs_ran, val_mae_history, label="validation")
+axes[1].set(title="MAE", xlabel="Эпоха", ylabel="MAE")
+axes[1].legend()
 axes[1].grid(True)
 plt.tight_layout()
 plt.show()"""))
@@ -253,7 +263,11 @@ nb.add(md("""### 7. `torchvision` и DataLoader
 `ToTensor` преобразует изображение `28 x 28` в `float32` диапазона `[0, 1]`, а
 `Normalize` использует известные train-статистики Fashion-MNIST. Метки остаются
 целыми индексами классов `0..9`, как требует `CrossEntropyLoss`. Seed генератора
-фиксирует порядок перемешивания train; `seed_worker` фиксирует NumPy в workers."""))
+фиксирует порядок перемешивания train; `seed_worker` фиксирует NumPy в workers.
+
+Для сравнения архитектур используем все 50 000 train-объектов. Три сети получают
+одинаковое число эпох и порядок объектов; дополнительное время является частью
+обязательного сравнения архитектур и фиксируется в итоговой таблице."""))
 nb.add(sol("""from torchvision import datasets, transforms
 
 
@@ -277,17 +291,28 @@ def seed_worker(_worker_id):
 
 BATCH_SIZE = 256
 NUM_WORKERS = 2
-fashion_generator = torch.Generator().manual_seed(SEED)
-fashion_train_loader = DataLoader(
-    fashion_train,
-    batch_size=BATCH_SIZE,
-    shuffle=True,
-    num_workers=NUM_WORKERS,
-    pin_memory=pin_memory,
-    worker_init_fn=seed_worker,
-    generator=fashion_generator,
-    persistent_workers=NUM_WORKERS > 0,
-)
+ARCHITECTURE_TRAIN_SIZE = 50_000
+subset_generator = torch.Generator().manual_seed(SEED)
+architecture_indices = torch.randperm(
+    len(fashion_train), generator=subset_generator
+)[:ARCHITECTURE_TRAIN_SIZE].tolist()
+fashion_architecture_train = Subset(fashion_train, architecture_indices)
+
+
+def make_fashion_train_loader(seed):
+    generator = torch.Generator().manual_seed(seed)
+    return DataLoader(
+        fashion_architecture_train,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+        pin_memory=pin_memory,
+        worker_init_fn=seed_worker,
+        generator=generator,
+        persistent_workers=NUM_WORKERS > 0,
+    )
+
+
 fashion_test_loader = DataLoader(
     fashion_test,
     batch_size=512,
@@ -299,50 +324,54 @@ fashion_test_loader = DataLoader(
 )
 
 print("Train объектов:", len(fashion_train))
+print("Используется в сравнении:", len(fashion_architecture_train))
 print("Test объектов:", len(fashion_test))"""))
 
-nb.add(md("""### 8. Архитектура `784 -> 800 -> 300 -> 10`
+nb.add(md("""### 8. Три MLP-архитектуры
 
 `Flatten` превращает изображение в вектор длины 784. Выход модели - 10
 неограниченных чисел (**логитов**), поэтому `Softmax` в сеть не добавляется.
 `CrossEntropyLoss` сама устойчиво вычисляет `LogSoftmax` и negative log-likelihood;
-явный `Softmax` перед ней был бы и математически неверен, и менее устойчив."""))
+явный `Softmax` перед ней был бы и математически неверен, и менее устойчив.
+Сравниваем компактную, широкую базовую и более глубокую сеть."""))
 nb.add(sol("""class FashionMLP(nn.Module):
-    def __init__(self):
+    def __init__(self, hidden_sizes):
         super().__init__()
-        self.layers = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(28 * 28, 800),
-            nn.ReLU(),
-            nn.Linear(800, 300),
-            nn.ReLU(),
-            nn.Linear(300, 10),
-        )
+        layers = [nn.Flatten()]
+        in_features = 28 * 28
+        for hidden_size in hidden_sizes:
+            layers.extend([nn.Linear(in_features, hidden_size), nn.ReLU()])
+            in_features = hidden_size
+        layers.append(nn.Linear(in_features, 10))
+        self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.layers(x)
 
 
-fashion_model = FashionMLP().to(device)
 classification_loss = nn.CrossEntropyLoss()
-classification_optimizer = torch.optim.Adam(
-    fashion_model.parameters(), lr=1e-3, weight_decay=1e-4
-)
+architecture_specs = [
+    ('Компактная 784-128-10', [128]),
+    ('Базовая 784-800-300-10', [800, 300]),
+    ('Глубокая 784-512-256-128-10', [512, 256, 128]),
+]
 
-print(fashion_model)
-print("Обучаемых параметров:", sum(p.numel() for p in fashion_model.parameters()))"""))
+for name, hidden_sizes in architecture_specs:
+    candidate = FashionMLP(hidden_sizes)
+    parameters = sum(p.numel() for p in candidate.parameters())
+    print(f'{name:<31}: {parameters:>9,} параметров')"""))
 
-nb.add(md("""### 9. Настоящие train/test циклы
+nb.add(md("""### 9. Общий train/test протокол и замер времени
 
 В train-цикле обязательны `model.train()`, обнуление градиентов, `backward()` и
 шаг оптимизатора. В test-цикле используются `model.eval()` и `inference_mode()`:
 градиенты не строятся, параметры не меняются. Класс выбирается через `argmax`
 логитов; `Softmax` для accuracy также не нужен, поскольку он не меняет максимум.
 
-Десять эпох дают разумный компромисс между временем и качеством. На типичном
-запуске ожидается test accuracy около **0.88-0.89**; небольшое отличие возможно
-из-за версии PyTorch и оборудования."""))
-nb.add(sol("""def train_classifier_one_epoch(model, loader):
+Все архитектуры получают одинаковые seed, объекты, порядок mini-batches,
+optimizer, batch size и десять эпох. Таймер охватывает только обучение; test
+оценивается после его остановки и не входит во время обучения."""))
+nb.add(sol("""def train_classifier_one_epoch(model, loader, optimizer):
     model.train()
     loss_sum = 0.0
     correct = 0
@@ -351,11 +380,11 @@ nb.add(sol("""def train_classifier_one_epoch(model, loader):
         images = images.to(device, non_blocking=pin_memory)
         labels = labels.to(device, non_blocking=pin_memory)
 
-        classification_optimizer.zero_grad()
+        optimizer.zero_grad()
         logits = model(images)
         loss = classification_loss(logits, labels)
         loss.backward()
-        classification_optimizer.step()
+        optimizer.step()
 
         batch_size = labels.size(0)
         loss_sum += loss.item() * batch_size
@@ -384,41 +413,88 @@ def evaluate_classifier(model, loader):
 
 
 FASHION_EPOCHS = 10
-fashion_train_losses = []
-fashion_train_accuracies = []
+architecture_results = []
+architecture_histories = {}
 
-for epoch in range(1, FASHION_EPOCHS + 1):
-    train_loss, train_accuracy = train_classifier_one_epoch(
-        fashion_model, fashion_train_loader
-    )
-    fashion_train_losses.append(train_loss)
-    fashion_train_accuracies.append(train_accuracy)
+for name, hidden_sizes in architecture_specs:
+    torch.manual_seed(SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(SEED)
+    model = FashionMLP(hidden_sizes).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    train_loader = make_fashion_train_loader(SEED)
+    history = {'train_loss': [], 'train_accuracy': []}
+
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+    started = time.perf_counter()
+    for epoch in range(1, FASHION_EPOCHS + 1):
+        train_loss, train_accuracy = train_classifier_one_epoch(
+            model, train_loader, optimizer
+        )
+        history['train_loss'].append(train_loss)
+        history['train_accuracy'].append(train_accuracy)
+        if epoch == 1 or epoch == FASHION_EPOCHS:
+            print(
+                f'{name}, эпоха {epoch:2d}/{FASHION_EPOCHS}: '
+                f'loss={train_loss:.4f}, accuracy={train_accuracy:.4f}'
+            )
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+    train_seconds = time.perf_counter() - started
+
+    test_loss, test_accuracy = evaluate_classifier(model, fashion_test_loader)
+    architecture_histories[name] = history
+    architecture_results.append({
+        'architecture': name,
+        'parameters': sum(p.numel() for p in model.parameters()),
+        'test_loss': test_loss,
+        'test_accuracy': test_accuracy,
+        'train_seconds': train_seconds,
+    })
+    del train_loader
+
+print(f"{'Архитектура':<31} {'параметры':>10} {'test acc':>9} {'время, с':>10}")
+for row in architecture_results:
     print(
-        f"Эпоха {epoch:2d}/{FASHION_EPOCHS}: "
-        f"train loss={train_loss:.4f}, train accuracy={train_accuracy:.4f}"
+        f"{row['architecture']:<31} {row['parameters']:>10,} "
+        f"{row['test_accuracy']:>9.4f} {row['train_seconds']:>10.2f}"
     )
 
-# Test не использовался для подбора параметров и оценивается только сейчас.
-fashion_test_loss, fashion_test_accuracy = evaluate_classifier(
-    fashion_model, fashion_test_loader
+highest_test_accuracy = max(
+    architecture_results, key=lambda row: row['test_accuracy']
 )
-print(f"Test loss: {fashion_test_loss:.4f}")
-print(f"Test accuracy: {fashion_test_accuracy:.4f} (ожидается примерно 0.88-0.89)")"""))
+print('Наибольшая test accuracy:', highest_test_accuracy['architecture'])"""))
 
-nb.add(md("### 10. Кривые обучения классификатора"))
+nb.add(md("""Test применяется здесь ровно так, как требует КИМ: для итогового
+сравнения трёх заранее зафиксированных архитектур. После просмотра таблицы новые
+гиперпараметры по этому test не подбираются. Время зависит от CPU/GPU, поэтому
+интерпретируется вместе с числом параметров и измеряется в одном окружении."""))
+
+nb.add(md("### 10. Кривые обучения и вывод об архитектурах"))
 nb.add(sol("""fashion_epochs = np.arange(1, FASHION_EPOCHS + 1)
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-axes[0].plot(fashion_epochs, fashion_train_losses, marker="o")
+for name, history in architecture_histories.items():
+    axes[0].plot(fashion_epochs, history['train_loss'], marker='o', label=name)
+    axes[1].plot(
+        fashion_epochs, history['train_accuracy'], marker='o', label=name
+    )
 axes[0].set(title="Fashion-MNIST train loss", xlabel="Эпоха", ylabel="Loss")
+axes[0].legend()
 axes[0].grid(True)
 
-axes[1].plot(fashion_epochs, fashion_train_accuracies, marker="o")
 axes[1].set(
     title="Fashion-MNIST train accuracy", xlabel="Эпоха", ylabel="Accuracy"
 )
+axes[1].legend()
 axes[1].grid(True)
 plt.tight_layout()
 plt.show()"""))
+
+nb.add(md("""**Вывод:** широкая или глубокая сеть не обязана быть лучшей: рост
+ёмкости увеличивает время и риск переобучения, а выигрыш test accuracy может быть
+мал. Компромисс следует выбирать по напечатанной таблице: сравнить прирост
+`test_accuracy` с дополнительными параметрами и секундами обучения."""))
 
 # === Часть В. Теория ===
 nb.add(md(r"""---
@@ -447,5 +523,5 @@ nb.add(md(r"""---
 зависит от архитектуры, данных, оптимизатора и регуляризации."""))
 
 path = "M3-dense-networks/attachments/kim-03-mlp-solution.ipynb"
-nb.save(path)
+nb.save(path, preserve_outputs=True)
 print(f"Сохранён: {path}  ({nb.cell_count()} ячеек)")

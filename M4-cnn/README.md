@@ -26,5 +26,5 @@ normalization), использование предобученных сетей
 - [Датасеты](../resources/datasets/README.md) — CIFAR-10, Intel Image Classification
 - [Бенчмарки](../resources/benchmarks/README.md) — ImageNet
 - [Статьи](../resources/papers/README.md) — He et al. 2015 (ResNet)
-- Исходные материалы курса: `dlpython_course/02_cnn/`, `03_pretrained_networks/`,
+- Исходные материалы курса: [`dlpython_course/02_cnn/`](https://github.com/sozykin/dlpython_course), `03_pretrained_networks/`,
   `04_transfer_learning/`

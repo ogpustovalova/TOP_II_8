@@ -89,8 +89,8 @@
 
 ## Источники
 
-- `dlpython_course/01_introduction/california_housing.ipynb` (регрессия, MLP
+- [`dlpython_course/01_introduction/california_housing.ipynb`](https://github.com/sozykin/dlpython_course) (регрессия, MLP
   `64→32→1`, Z-нормализация по train).
-- `dlpython_course/01_introduction/fashion_mnist_dense.ipynb` (классификация).
+- [`dlpython_course/01_introduction/fashion_mnist_dense.ipynb`](https://github.com/sozykin/dlpython_course) (классификация).
 - Методический ориентир: лекция Аммара Али (08.07.2026) — UAT с оговоркой
   «существование ≠ находимость».

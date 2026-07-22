@@ -32,5 +32,7 @@ DL-1.2_Б и DL-1.4_Б. Конкретный проект подтверждае
 ## Связанные ресурсы
 
 - [Датасеты и бенчмарки](../resources/README.md)
-- [Пример формата соревнования](https://www.kaggle.com/competitions/ml-thread-4-2026)
-  (эталон организации Kaggle-соревнования по машинному обучению).
+- [DengAI: Predicting Disease Spread](https://www.drivendata.org/competitions/44/dengai-predicting-disease-spread/)
+  — действующий пример учебного соревнования с публичным лидербордом.
+- [Документация Kaggle CLI](https://github.com/Kaggle/kaggle-cli/blob/main/docs/competitions.md)
+  — команды скачивания данных, отправки решения и просмотра лидерборда.

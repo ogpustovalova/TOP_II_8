@@ -26,8 +26,14 @@
 - **Среда:** Jupyter Notebook (Colab с GPU рекомендуется), Python 3,
   TensorFlow/Keras (основной вариант), при желании — PyTorch.
 - **Длительность:** 6 лабораторных часов (≈16 ч с СРС) — см. [РПД](../docs/rpd.md). ⚠️ _Предложено автором ФОС на основе распределения часов в [РПД](../docs/rpd.md); подлежит согласованию._
-- **Датасеты:** отзывы на банки `banks.csv` (бинарная классификация тональности),
-  метеоданные Йены `jena_climate_2009_2016.csv` (регрессия температуры).
+- **Датасеты:** [`ai-forever/ru-reviews-classification`](https://huggingface.co/datasets/ai-forever/ru-reviews-classification)
+  (в метаданных указана Apache-2.0, происхождение текстов требует подтверждения;
+  используется только опубликованный `train.jsonl` в revision
+  `0f67d914f396ce22917dc6463ec619799b3b08d2`, SHA-256
+  `0b97698a0c6871437d17e07c973018af9b8c9230ec9048d85cb875cc2c2470ea`) и
+  метеоданные Йены `jena_climate_2009_2016.csv` (CC BY 4.0; регрессия
+  температуры). Условия и первоисточники приведены в [карточках
+  датасетов](../resources/datasets/README.md).
 
 ## Содержание задания
 
@@ -39,12 +45,23 @@
 1. Реализовать regex-нормализацию URL, e-mail, чисел и пробелов; добавить не
    менее пяти автоматических тестов.
 2. Выполнить токенизацию (`nltk.word_tokenize`), лемматизацию (`pymorphy3`),
-   удаление стоп-слов и пунктуации.
+   удаление стоп-слов и пунктуации. Для модельного конвейера использовать
+   фиксированный встроенный список стоп-слов: наличие корпуса NLTK не должно
+   менять входные последовательности и метрики.
 3. Выполнить синтаксический разбор не менее пяти предложений через
    Natasha/spaCy/Stanza; сохранить таблицу `token — head — dependency` и
    прокомментировать два дерева зависимостей.
-4. Построить словарь по частоте (`max_words=10000`) со спецкодами: `0` —
-   паддинг, `1` — неизвестное слово (OOV), нумерация слов с `2`.
+4. Загрузить закреплённый `train.jsonl`, проверить существующий кэш по указанному
+   SHA-256; при скачивании использовать временный файл, проверку хэша и атомарное
+   переименование. Устойчиво определить каталог `attachments/data` при запуске
+   ноутбука как из его каталога, так и из корня репозитория. Исключить нейтральный
+   класс, отобразить negative/positive в `0`/`1`, при `seed=42` взять по 500
+   объектов каждого класса и сформировать локальное стратифицированное
+   train/validation/test-разбиение 640/160/200. Все три части получаются только
+   из опубликованного сплита `train`; локальный test не является официальным
+   test-сплитом набора. Построить словарь только по локальному train
+   (`max_words=10000`) со спецкодами: `0` — паддинг, `1` — неизвестное слово
+   (OOV), нумерация слов с `2`.
 5. Преобразовать тексты в последовательности индексов и выровнять длину
    (`pad_sequences(maxlen=200)`).
 
@@ -59,11 +76,16 @@
 **Часть В. Прогнозирование временного ряда.**
 
 8. Загрузить `jena_climate_2009_2016.csv`, нормализовать признаки по train,
-   сформировать окна с помощью `timeseries_dataset_from_array`
-   (`sequence_length=120`, `sampling_rate=6`).
+   сформировать окна с помощью `timeseries_dataset_from_array` или
+   эквивалентного `torch.utils.data.Dataset` (`sequence_length=120`,
+   `sampling_rate=6`).
 9. Построить и сравнить: простой бейзлайн («прогноз последним значением»),
-   сеть `LSTM(16)` и `LSTM(32, recurrent_dropout=0.25)`. Оценить `MAE`,
-   сравнить с бейзлайном.
+   сеть `LSTM(16)` и `LSTM(32, recurrent_dropout=0.25)`. В PyTorch recurrent
+   dropout реализовать через `LSTMCell`: одна dropout-маска применяется к
+   `h[t-1]` на всех шагах последовательности; обычный `nn.LSTM(dropout=...)` не
+   считается эквивалентом. Итоговая таблица должна содержать обе LSTM и бейзлайн,
+   validation/test `MAE`, число параметров и время обучения. Stacked GRU можно
+   добавить как необязательное расширение.
 
 ## Формат сдачи
 
@@ -71,6 +93,8 @@
   архитектур.
 - Результаты regex-тестов, таблицы синтаксических зависимостей и сравнения
   LSTM/GRU по двум значениям `hidden_size`.
+- Таблица временного ряда с бейзлайном, `LSTM(16)` и обязательной
+  `LSTM(32, recurrent_dropout=0.25)`.
 - Вывод: в каких случаях LSTM предпочтительнее 1D-CNN (и наоборот); насколько
   рекуррентная сеть превосходит наивный бейзлайн на временном ряде.
 - Устная защита.
@@ -106,7 +130,7 @@
 
 ## Замечание о материалах курса
 
-В исходных ноутбуках `dlpython_course` GRU на текстах отсутствует (ноутбук
+В исходных ноутбуках [`dlpython_course`](https://github.com/sozykin/dlpython_course) GRU на текстах отсутствует (ноутбук
 `07_cnn1d` номинально про GRU, но реализует 1D-CNN); GRU представлен только в
 задаче временных рядов (`08_timeseries/weather_tensorflow.ipynb`, stacked GRU с
 `recurrent_dropout`). Студент может опционально сравнить GRU с LSTM на временных
@@ -114,11 +138,14 @@
 
 ## Источники
 
-- `dlpython_course/05_text_processing/text_classification.ipynb` (предобработка
+- [`dlpython_course/05_text_processing/text_classification.ipynb`](https://github.com/sozykin/dlpython_course) (предобработка
   текста, словарь с кодами 0=pad/1=OOV).
-- `dlpython_course/06_rnn/tensorflow/text_classification_lstm.ipynb`
+- [`dlpython_course/06_rnn/tensorflow/text_classification_lstm.ipynb`](https://github.com/sozykin/dlpython_course)
   (`Embedding` + `LSTM`).
-- `dlpython_course/07_cnn1d/tensorflow/text_classification_cnn1d.ipynb`
+- [`dlpython_course/07_cnn1d/tensorflow/text_classification_cnn1d.ipynb`](https://github.com/sozykin/dlpython_course)
   (`Conv1D` + `GlobalMaxPooling1D`).
-- `dlpython_course/08_timeseries/weather_tensorflow.ipynb` (Jena Climate,
+- [`dlpython_course/08_timeseries/weather_tensorflow.ipynb`](https://github.com/sozykin/dlpython_course) (Jena Climate,
   сравнение Dense/1D-CNN/LSTM/GRU/Bidirectional — образец структуры задания).
+- [Russian Reviews Classification](https://huggingface.co/datasets/ai-forever/ru-reviews-classification)
+  (технически воспроизводимая замена исходного `banks.csv`; в метаданных указана
+  Apache-2.0, но происхождение текстов требует подтверждения правообладателем).

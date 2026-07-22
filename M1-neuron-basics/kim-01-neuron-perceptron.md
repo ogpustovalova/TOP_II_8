@@ -92,6 +92,6 @@ Fashion-MNIST.
 
 ## Источники
 
-- Исходный ноутбук курса: `dlpython_course/01_introduction/fashion_mnist_dense.ipynb`
-  (Keras), `dlpython_course/01_introduction/pytorch/fashion_mnist_dense.ipynb` (PyTorch).
+- Исходный ноутбук курса: [`dlpython_course/01_introduction/fashion_mnist_dense.ipynb`](https://github.com/sozykin/dlpython_course)
+  (Keras), [`dlpython_course/01_introduction/pytorch/fashion_mnist_dense.ipynb`](https://github.com/sozykin/dlpython_course) (PyTorch).
 - Пример оформления задания: `examples/lab-regression-features.ipynb`.

@@ -20,5 +20,5 @@
 
 - [Датасеты](../resources/datasets/README.md) — California Housing, Fashion-MNIST
 - [Python-библиотеки](../resources/software/python-libs/README.md) — Keras, PyTorch
-- Исходные материалы курса: `dlpython_course/01_introduction/california_housing.ipynb`,
-  `dlpython_course/01_introduction/fashion_mnist_dense.ipynb`
+- Исходные материалы курса: [`dlpython_course/01_introduction/california_housing.ipynb`](https://github.com/sozykin/dlpython_course),
+  [`dlpython_course/01_introduction/fashion_mnist_dense.ipynb`](https://github.com/sozykin/dlpython_course)

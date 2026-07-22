@@ -182,5 +182,5 @@ nb.add(md("""---
 5. `optimizer.step()` — обновить веса по вычисленным градиентам."""))
 
 path = "M1-neuron-basics/attachments/kim-01-neuron-perceptron-solution.ipynb"
-nb.save(path)
+nb.save(path, preserve_outputs=True)
 print(f"Сохранён: {path}  ({nb.cell_count()} ячеек)")

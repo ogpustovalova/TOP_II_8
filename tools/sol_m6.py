@@ -624,5 +624,5 @@ nb.add(md("""---
   точек из непрерывной 2D-сетки создаёт новые изображения."""))
 
 path = "M6-autoencoders/attachments/kim-06-autoencoders-solution.ipynb"
-nb.save(path)
+nb.save(path, preserve_outputs=True)
 print(f"Сохранён: {path}  ({nb.cell_count()} ячеек)")

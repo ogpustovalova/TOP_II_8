@@ -100,9 +100,9 @@
 
 ## Источники
 
-- `dlpython_course/01_introduction/fashion_mnist_prevent_overfitting.ipynb`
+- [`dlpython_course/01_introduction/fashion_mnist_prevent_overfitting.ipynb`](https://github.com/sozykin/dlpython_course)
   (кривые обучения, методы борьбы с переобучением).
-- `dlpython_course/01_introduction/pytorch/fashion_mnist_dense.ipynb`
+- [`dlpython_course/01_introduction/pytorch/fashion_mnist_dense.ipynb`](https://github.com/sozykin/dlpython_course)
   (явный цикл обучения `zero_grad`/`backward`/`step`).
 - Методический ориентир: лекция Аммара Али (ITMO Top AI, 08.07.2026) —
   backprop на NumPy перед фреймворком как педагогический стержень.

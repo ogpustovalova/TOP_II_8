@@ -118,7 +118,7 @@
 
 ## Замечание о материалах курса
 
-В исходных ноутбуках `dlpython_course` эксперимент с разной глубиной сети
+В исходных ноутбуках [`dlpython_course`](https://github.com/sozykin/dlpython_course) эксперимент с разной глубиной сети
 (ResNet-20 vs ResNet-56 по He et al. 2015) отсутствует; ResNet представлен
 только как готовая предобученная сеть. Полноценная реализация residual-блока и
 сравнение глубины — рекомендуемое (но не обязательное для уровня Б) расширение
@@ -127,13 +127,13 @@
 
 ## Источники
 
-- `dlpython_course/02_cnn/tensorflow/cifar10.ipynb`, `02_cnn/tensorflow/fashion_mnist.ipynb`,
+- [`dlpython_course/02_cnn/tensorflow/cifar10.ipynb`](https://github.com/sozykin/dlpython_course), `02_cnn/tensorflow/fashion_mnist.ipynb`,
   `02_cnn/pytorch/cifar10.ipynb` (собственные CNN).
-- `dlpython_course/03_pretrained_networks/tensorflow/resnet_pretrained.ipynb`
+- [`dlpython_course/03_pretrained_networks/tensorflow/resnet_pretrained.ipynb`](https://github.com/sozykin/dlpython_course)
   (предобученная ResNet).
-- `dlpython_course/04_transfer_learning/tensorflow/scenes.ipynb` (двухэтапный
+- [`dlpython_course/04_transfer_learning/tensorflow/scenes.ipynb`](https://github.com/sozykin/dlpython_course) (двухэтапный
   transfer learning: заморозка + fine-tuning с `Adam(1e-5)` — образец).
-- `dlpython_course/04_transfer_learning/pytorch/animals.ipynb` (PyTorch:
+- [`dlpython_course/04_transfer_learning/pytorch/animals.ipynb`](https://github.com/sozykin/dlpython_course) (PyTorch:
   замена FC-головы).
 - Методический ориентир: лекция Аммара Али (08.07.2026) — residual connections
   и проблема затухающего градиента.

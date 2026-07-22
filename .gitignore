@@ -19,5 +19,15 @@ venv/
 validation-report.txt
 
 # Датасеты, скачиваемые при выполнении эталонных ноутбуков
-data/
 M*/attachments/data/
+
+# Те же кэши при запуске Jupyter из корня репозитория
+/data/FashionMNIST/
+/data/MNIST/
+/data/cifar-10-batches-py/
+/data/cifar-10-python.tar.gz
+/data/cv_pipeline/
+/yolo11n.pt
+
+# Веса предобученных моделей, загружаемые рядом с ноутбуками
+M*/attachments/*.pt

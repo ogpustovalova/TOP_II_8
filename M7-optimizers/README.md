@@ -21,5 +21,5 @@
 
 - [Датасеты](../resources/datasets/README.md) — Fashion-MNIST, CIFAR-10
 - [Статьи](../resources/papers/README.md) — Kingma & Ba 2014 (Adam)
-- Исходные материалы курса: `dlpython_course/keras_callbacks/lr_scheduler.ipynb`,
+- Исходные материалы курса: [`dlpython_course/keras_callbacks/lr_scheduler.ipynb`](https://github.com/sozykin/dlpython_course),
   `early_stopping.ipynb`

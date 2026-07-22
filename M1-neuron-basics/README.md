@@ -21,4 +21,4 @@
 
 - [Датасеты](../resources/datasets/README.md) — Fashion-MNIST
 - [Python-библиотеки](../resources/software/python-libs/README.md) — NumPy, PyTorch, TensorFlow/Keras
-- Исходные материалы курса: `dlpython_course/01_introduction/`
+- Исходные материалы курса: [`dlpython_course/01_introduction/`](https://github.com/sozykin/dlpython_course)
