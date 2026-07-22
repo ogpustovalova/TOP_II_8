@@ -1,69 +1,116 @@
 .
-├── Exam/
-│   ├── README.md
-│   ├── kim-exam.md
-│   ├── rubric-exam.md
-│   ├── attachments/
-├── M1-neuron-basics/
-│   ├── README.md
-│   ├── kim-01-neuron-perceptron.md
-│   ├── rubric-01.md
-│   ├── attachments/
-├── M2-training/
-│   ├── README.md
-│   ├── kim-01-backprop-training.md
-│   ├── rubric-01.md
-│   ├── attachments/
-├── M3-dense-networks/
-│   ├── README.md
-│   ├── kim-01-mlp.md
-│   ├── rubric-01.md
-│   ├── attachments/
-├── M4-cnn/
-│   ├── README.md
-│   ├── kim-01-cnn.md
-│   ├── rubric-01.md
-│   ├── attachments/
-├── M5-sequences/
-│   ├── README.md
-│   ├── kim-01-sequences.md
-│   ├── rubric-01.md
-│   ├── attachments/
-├── M6-autoencoders/
-│   ├── README.md
-│   ├── kim-01-autoencoders.md
-│   ├── rubric-01.md
-│   ├── attachments/
-├── M7-optimizers/
-│   ├── README.md
-│   ├── kim-01-optimizers.md
-│   ├── rubric-01.md
-│   ├── attachments/
-├── Project/
-│   ├── README.md
-│   ├── kim-project.md
-│   ├── rubric-project.md
-│   ├── attachments/
+├── CONTRIBUTING.md
 ├── data/
 │   ├── README.md
+│   ├── krm-descriptors.md
 │   └── krm-v3.0.xlsx
 ├── docs/
+│   ├── cache-documentation.md
 │   ├── README.md
+│   ├── filled-vs-invented.md
 │   ├── fill-plan.md
 │   ├── kim-format-options.md
+│   ├── kiu-coverage.md
+│   ├── maintenance-progress.md
+│   ├── next-session-plan.md
 │   ├── quality-checklist.md
-│   └── rpd.md
+│   ├── reference-access-policy.md
+│   ├── rpd.md
+│   ├── urfu-program-facts.md
+│   └── validation-report.md
+├── environment.yml
+├── Exam/
+│   ├── README.md
+│   ├── attachments/
+│   │   └── .gitkeep
+│   ├── kim-exam.md
+│   └── rubric-exam.md
+├── .gitignore
+├── Lecture-control/
+│   ├── README.md
+│   ├── attachments/
+│   │   ├── k1-keys.md
+│   │   ├── k1-variants.md
+│   │   ├── k2-keys.md
+│   │   └── k2-variants.md
+│   ├── kim-lecture-control.md
+│   └── rubric-lecture-control.md
+├── LICENSE.md
+├── M1-neuron-basics/
+│   ├── README.md
+│   ├── attachments/
+│   │   ├── .gitkeep
+│   │   ├── kim-01-neuron-perceptron.ipynb
+│   │   └── kim-01-neuron-perceptron-solution.ipynb
+│   ├── kim-01-neuron-perceptron.md
+│   └── rubric-01.md
+├── M2-training/
+│   ├── README.md
+│   ├── attachments/
+│   │   ├── .gitkeep
+│   │   ├── kim-02-backprop-training.ipynb
+│   │   └── kim-02-backprop-training-solution.ipynb
+│   ├── kim-01-backprop-training.md
+│   └── rubric-01.md
+├── M3-dense-networks/
+│   ├── README.md
+│   ├── attachments/
+│   │   ├── .gitkeep
+│   │   ├── kim-03-mlp.ipynb
+│   │   └── kim-03-mlp-solution.ipynb
+│   ├── kim-01-mlp.md
+│   └── rubric-01.md
+├── M4-cnn/
+│   ├── README.md
+│   ├── attachments/
+│   │   ├── .gitkeep
+│   │   ├── kim-04-cnn.ipynb
+│   │   └── kim-04-cnn-solution.ipynb
+│   ├── kim-01-cnn.md
+│   └── rubric-01.md
+├── M5-sequences/
+│   ├── README.md
+│   ├── attachments/
+│   │   ├── .gitkeep
+│   │   ├── kim-05-sequences.ipynb
+│   │   └── kim-05-sequences-solution.ipynb
+│   ├── kim-01-sequences.md
+│   └── rubric-01.md
+├── M6-autoencoders/
+│   ├── README.md
+│   ├── attachments/
+│   │   ├── .gitkeep
+│   │   ├── kim-06-autoencoders.ipynb
+│   │   └── kim-06-autoencoders-solution.ipynb
+│   ├── kim-01-autoencoders.md
+│   └── rubric-01.md
+├── M7-optimizers/
+│   ├── README.md
+│   ├── attachments/
+│   │   ├── .gitkeep
+│   │   ├── kim-07-optimizers.ipynb
+│   │   └── kim-07-optimizers-solution.ipynb
+│   ├── kim-01-optimizers.md
+│   └── rubric-01.md
 ├── methodical-guidelines/
 │   ├── README.md
 │   ├── students/
 │   │   └── README.md
 │   ├── teachers-assessment/
 │   │   └── README.md
-│   ├── teachers-resources/
-│   │   └── README.md
+│   └── teachers-resources/
+│       └── README.md
 ├── other/
 │   ├── README.md
 │   └── РПД_ОНС.docx
+├── Project/
+│   ├── README.md
+│   ├── attachments/
+│   │   └── .gitkeep
+│   ├── kim-project.md
+│   └── rubric-project.md
+├── README.md
+├── repository-tree.txt
 ├── resources/
 │   ├── README.md
 │   ├── benchmarks/
@@ -79,12 +126,30 @@
 │   ├── problem-banks/
 │   │   └── README.md
 │   ├── software/
-│   │   ├── python-libs/
-│   │   │   └── README.md
+│   │   └── python-libs/
+│   │       └── README.md
 │   ├── test-banks/
 │   │   └── README.md
-│   ├── textbooks/
-│   │   └── README.md
+│   └── textbooks/
+│       └── README.md
 ├── team/
 │   ├── README.md
-│   ├── images/
+│   └── images/
+│       └── .gitkeep
+└── tools/
+    ├── build_m1.py
+    ├── build_m2.py
+    ├── build_m3.py
+    ├── build_m4.py
+    ├── build_m5.py
+    ├── build_m6.py
+    ├── build_m7.py
+    ├── nb_builder.py
+    ├── sol_m1.py
+    ├── sol_m2.py
+    ├── sol_m3.py
+    ├── sol_m4.py
+    ├── sol_m5.py
+    ├── sol_m6.py
+    ├── sol_m7.py
+    └── validate_repository.py
