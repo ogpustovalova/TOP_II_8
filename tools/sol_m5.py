@@ -8,7 +8,7 @@ from nb_builder import Notebook, md, sol, solution_header
 
 nb = Notebook("КИМ 5.1 — эталон на PyTorch")
 nb.add(solution_header(
-    "КИМ 5.1. LSTM, GRU и 1D-CNN (PyTorch)",
+    "КИМ 5.1. RNN, GRU, LSTM и 1D-CNN (PyTorch)",
     "kim-05-sequences.ipynb",
 ))
 nb.add(md("""В решении нет зависимости от Keras: предобработка текста, модели,
@@ -19,7 +19,9 @@ Classification и берёт из него фиксированную страт
 автономной проверки реализации доступен явно обозначенный синтетический режим.
 Все напечатанные метрики получаются при текущем запуске.
 
-Полный запуск рекомендуется выполнять с GPU; ручной цикл `LSTMCell` с recurrent
+Полный запуск рекомендуется выполнять с GPU. Текстовая часть обучает шесть
+сопоставимых кандидатов `RNN/GRU/LSTM × hidden_size 32/64`; короткая трёхшаговая
+сверка `RNNCell` почти не влияет на время. Ручной цикл `LSTMCell` с recurrent
 dropout на CPU может занять заметно больше времени. Для Jena Climate используется
 репрезентативная хронологическая подвыборка целевых моментов, но физический смысл
 каждого окна (5 суток истории и прогноз на 24 часа вперёд) сохраняется."""))
@@ -349,6 +351,11 @@ else:
 print(dataset_kind)
 print("Число текстов:", len(texts), "баланс классов:", np.bincount(labels))"""))
 
+nb.add(md("""### Post-padding и фактические длины
+
+Последовательности обрезаются и дополняются справа. Отдельные effective lengths
+позволяют `pack_padded_sequence` остановить рекуррентный проход перед PAD; для
+редкого пустого текста используется один OOV-токен с длиной 1."""))
 nb.add(sol("""MAX_WORDS = 10_000
 MAXLEN = 200
 
@@ -376,10 +383,15 @@ def build_vocab(tokenized_texts, max_words=MAX_WORDS):
 
 
 def text_to_sequence(tokens, word_to_index, maxlen=MAXLEN):
-    sequence = [word_to_index.get(token, 1) for token in tokens]
-    # Предпаддинг: последнее состояние LSTM соответствует последнему слову, а не PAD.
-    sequence = [0] * max(0, maxlen - len(sequence)) + sequence
-    return sequence[-maxlen:]
+    sequence = [word_to_index.get(token, 1) for token in tokens[:maxlen]]
+    if not sequence:
+        sequence = [word_to_index["<OOV>"]]
+    return sequence + [0] * (maxlen - len(sequence))
+
+
+def effective_length(tokens, maxlen=MAXLEN):
+    # Пустой текст представлен одним OOV-токеном: packing не принимает 0.
+    return max(1, min(len(tokens), maxlen))
 
 
 train_pool_idx, test_idx = stratified_split_indices(labels)
@@ -405,32 +417,203 @@ X_val = torch.tensor(
     [text_to_sequence(tokens, word_to_index) for tokens in val_tokens],
     dtype=torch.long,
 )
+train_lengths = torch.tensor(
+    [effective_length(tokens) for tokens in train_tokens], dtype=torch.long,
+)
+val_lengths = torch.tensor(
+    [effective_length(tokens) for tokens in val_tokens], dtype=torch.long,
+)
+test_lengths = torch.tensor(
+    [effective_length(tokens) for tokens in test_tokens], dtype=torch.long,
+)
 y_train = torch.tensor(labels[train_idx], dtype=torch.float32)
 y_val = torch.tensor(labels[val_idx], dtype=torch.float32)
 y_test = torch.tensor(labels[test_idx], dtype=torch.float32)
 
 assert word_to_index["<PAD>"] == 0 and word_to_index["<OOV>"] == 1
 assert X_train.shape[1] == MAXLEN and int(X_train.max()) < MAX_WORDS
+assert train_lengths.min() >= 1 and train_lengths.max() <= MAXLEN
+for sequences, lengths in (
+    (X_train, train_lengths),
+    (X_val, val_lengths),
+    (X_test, test_lengths),
+):
+    assert all(
+        not sequence[int(length):].any()
+        for sequence, length in zip(sequences, lengths)
+    )
 if USE_RU_REVIEWS:
     assert (len(X_train), len(X_val), len(X_test)) == (640, 160, 200)
 print("Размер словаря:", len(word_to_index), "из максимальных", MAX_WORDS)
 print("Train/val/test:", X_train.shape, X_val.shape, X_test.shape)
-print("Проверка PAD/OOV:", text_to_sequence(["совсемновоеслово"], word_to_index, 4))"""))
+print("Диапазон train lengths:", int(train_lengths.min()), int(train_lengths.max()))
+print("Проверка post-padding/PAD/OOV:",
+      text_to_sequence(["совсемновоеслово"], word_to_index, 4))"""))
 
-# === Часть Б. Классификация текста ===
-nb.add(md("---\n## Часть Б. Классификация текста: LSTM, GRU и 1D-CNN"))
-nb.add(md("""Обе модели возвращают **логиты**, поэтому используется численно
-устойчивая `BCEWithLogitsLoss` (сигмоида уже включена в loss). `padding_idx=0`
-фиксирует нулевой эмбеддинг для паддинга. В CNN `Conv1d` ожидает каналы перед
-длиной последовательности, поэтому после `Embedding` оси переставляются."""))
+# === Часть Б. Единичная задержка и классификация текста ===
+nb.add(md("---\n## Часть Б. Единичная задержка и классификация: RNN, GRU, LSTM, 1D-CNN"))
+nb.add(md(r"""### Vanilla RNN: переход состояния и блок единичной задержки
+
+Для одного объекта с входом $x_t\in\mathbb{R}^D$ и скрытым состоянием
+$h_t\in\mathbb{R}^H$ vanilla RNN вычисляет
+
+$$h_t = f(W_x x_t + W_h h_{t-1} + b),$$
+
+где $W_x\in\mathbb{R}^{H\times D}$, $W_h\in\mathbb{R}^{H\times H}$,
+$b\in\mathbb{R}^H$. В `nn.RNN` $b=b_{ih}+b_{hh}$, а при
+`batch_first=True` пакетная запись использует транспонированные матрицы весов.
+
+Развёртка на три шага делает рекуррентную связь наблюдаемой:
+
+$$h_1=f(W_x x_1+W_h h_0+b),$$
+$$h_2=f(W_x x_2+W_h h_1+b),$$
+$$h_3=f(W_x x_3+W_h h_2+b).$$
+
+```text
+x_t ------> [W_x] --\
+                         (+ b) --> [f] --> h_t --> [z^-1] --+
+h_{t-1} --> [W_h] --/                                      |
+             ^                                              |
+             +---------------- состояние следующего шага ---+
+```
+
+`z^-1` — блок единичной задержки: значение $h_t$ сохраняется на один дискретный
+шаг и становится $h_{t-1}$ для следующего вычисления.
+
+| Объект | Один объект | С batch / последовательностью |
+|---|---:|---:|
+| $x_t$ | $(D,)$ | $(B,D)$ |
+| $h_{t-1}, h_t$ | $(H,)$ | $(B,H)$ |
+| $W_x$ (`weight_ih`) | $(H,D)$ | $(H,D)$ |
+| $W_h$ (`weight_hh`) | $(H,H)$ | $(H,H)$ |
+| $b=b_{ih}+b_{hh}$ | $(H,)$ | broadcast до $(B,H)$ |
+| `nn.RNN` output | — | $(B,T,H)$ |
+| `nn.RNN` $h_n$ | — | $(1,B,H)$ |"""))
+
+nb.add(md("""### Наблюдаемый эксперимент: три ручных шага `RNNCell`
+
+У `nn.RNN` и `nn.RNNCell` ниже одни и те же четыре параметра. В ручном цикле
+новое состояние явно передаётся в следующий вызов ячейки. Сверяются формула
+первого шага, все три выхода и финальное состояние, а не только их формы."""))
+nb.add(sol("""DEMO_BATCH, DEMO_STEPS, DEMO_INPUT, DEMO_HIDDEN = 2, 3, 4, 5
+torch.manual_seed(SEED + 300)
+demo_sequence = torch.randn(DEMO_BATCH, DEMO_STEPS, DEMO_INPUT)
+demo_h0 = torch.randn(1, DEMO_BATCH, DEMO_HIDDEN)
+demo_rnn = nn.RNN(
+    DEMO_INPUT, DEMO_HIDDEN, nonlinearity="tanh", batch_first=True,
+)
+demo_cell = nn.RNNCell(DEMO_INPUT, DEMO_HIDDEN, nonlinearity="tanh")
+
+with torch.no_grad():
+    demo_cell.weight_ih.copy_(demo_rnn.weight_ih_l0)
+    demo_cell.weight_hh.copy_(demo_rnn.weight_hh_l0)
+    demo_cell.bias_ih.copy_(demo_rnn.bias_ih_l0)
+    demo_cell.bias_hh.copy_(demo_rnn.bias_hh_l0)
+
+rnn_outputs, rnn_hn = demo_rnn(demo_sequence, demo_h0)
+manual_hidden = demo_h0[0]
+manual_steps = []
+for step_input in demo_sequence.unbind(dim=1):
+    manual_hidden = demo_cell(step_input, manual_hidden)
+    manual_steps.append(manual_hidden)
+manual_outputs = torch.stack(manual_steps, dim=1)
+demo_x_t = demo_sequence[:, 0]
+demo_h_t = manual_outputs[:, 0]
+demo_bias = demo_rnn.bias_ih_l0 + demo_rnn.bias_hh_l0
+
+formula_h1 = torch.tanh(
+    demo_x_t @ demo_rnn.weight_ih_l0.T
+    + demo_h0[0] @ demo_rnn.weight_hh_l0.T
+    + demo_bias
+)
+
+assert demo_sequence.shape == (DEMO_BATCH, DEMO_STEPS, DEMO_INPUT)
+assert demo_h0.shape == (1, DEMO_BATCH, DEMO_HIDDEN)
+assert demo_x_t.shape == (DEMO_BATCH, DEMO_INPUT)
+assert demo_h_t.shape == (DEMO_BATCH, DEMO_HIDDEN)
+assert demo_rnn.weight_ih_l0.shape == (DEMO_HIDDEN, DEMO_INPUT)
+assert demo_rnn.weight_hh_l0.shape == (DEMO_HIDDEN, DEMO_HIDDEN)
+assert demo_rnn.bias_ih_l0.shape == (DEMO_HIDDEN,)
+assert demo_rnn.bias_hh_l0.shape == (DEMO_HIDDEN,)
+assert demo_bias.shape == (DEMO_HIDDEN,)
+assert rnn_outputs.shape == (DEMO_BATCH, DEMO_STEPS, DEMO_HIDDEN)
+assert rnn_hn.shape == (1, DEMO_BATCH, DEMO_HIDDEN)
+assert torch.allclose(formula_h1, manual_outputs[:, 0], atol=1e-6)
+assert torch.allclose(manual_outputs, rnn_outputs, atol=1e-6)
+assert torch.allclose(manual_hidden, rnn_hn[0], atol=1e-6)
+
+print("x / h0:", tuple(demo_sequence.shape), tuple(demo_h0.shape))
+print("x_t / h_t / bias:", tuple(demo_x_t.shape), tuple(demo_h_t.shape),
+      tuple(demo_bias.shape))
+print("W_x / W_h:", tuple(demo_rnn.weight_ih_l0.shape), tuple(demo_rnn.weight_hh_l0.shape))
+print("output / h_n:", tuple(rnn_outputs.shape), tuple(rnn_hn.shape))
+print("Шагов ручной развёртки:", len(manual_steps))
+print("max |RNNCell steps - nn.RNN output|:",
+      float((manual_outputs - rnn_outputs).abs().max()))
+print("max |last RNNCell h - nn.RNN h_n|:",
+      float((manual_hidden - rnn_hn[0]).abs().max()))"""))
+
+nb.add(md("""**Ответ для защиты.** Блок единичной задержки не обучает и не
+преобразует состояние: он хранит выход `h_t` один такт, чтобы на шаге `t+1` тот
+стал предыдущим состоянием. Поэтому ручной цикл обязан присваивать результат
+ячейки переменной состояния перед следующим вызовом. Vanilla RNN имеет одно
+скрытое состояние и один переход с `tanh`, без гейтов. GRU также хранит одно
+состояние, но reset- и update-гейты регулируют смешивание старой и новой
+информации. LSTM переносит пару `(h_t, c_t)` и использует input-, forget- и
+output-гейты; отдельный путь `c_t` помогает сохранять информацию и градиент на
+длинных интервалах. Численная сверка доказывает равенство конкретного
+трёхшагового прямого прохода при общих весах, но сама по себе не доказывает
+устойчивость обучения на длинных последовательностях."""))
+
+nb.add(md("""### Модели классификации и проверка форм
+
+Обязательная часть реализована в PyTorch. Все модели возвращают **логиты**,
+поэтому используется численно устойчивая `BCEWithLogitsLoss` (сигмоида уже
+включена в loss). `padding_idx=0` фиксирует нулевой эмбеддинг для паддинга.
+Рекуррентные слои получают post-padded вход и lengths через
+`pack_padded_sequence`, поэтому PAD не обновляет итоговое состояние. В CNN
+`Conv1d` ожидает каналы перед длиной, а padded-позиции исключаются из max
+pooling."""))
 nb.add(sol("""text_train_loader = DataLoader(
-    TensorDataset(X_train, y_train),
+    TensorDataset(X_train, train_lengths, y_train),
     batch_size=32,
     shuffle=True,
     generator=torch.Generator().manual_seed(SEED),
 )
-text_val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=64)
-text_test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=64)
+text_val_loader = DataLoader(
+    TensorDataset(X_val, val_lengths, y_val), batch_size=64,
+)
+text_test_loader = DataLoader(
+    TensorDataset(X_test, test_lengths, y_test), batch_size=64,
+)
+
+
+def pack_embeddings(embedded, lengths):
+    return nn.utils.rnn.pack_padded_sequence(
+        embedded,
+        lengths.cpu(),
+        batch_first=True,
+        enforce_sorted=False,
+    )
+
+
+class RNNClassifier(nn.Module):
+    def __init__(self, vocab_size=MAX_WORDS, embedding_dim=64, hidden_size=64):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+        self.rnn = nn.RNN(
+            embedding_dim,
+            hidden_size,
+            nonlinearity="tanh",
+            batch_first=True,
+        )
+        self.output = nn.Linear(hidden_size, 1)
+
+    def forward(self, token_ids, lengths):
+        embedded = self.embedding(token_ids)              # (batch, length, 64)
+        packed = pack_embeddings(embedded, lengths)
+        _, hidden = self.rnn(packed)
+        return self.output(hidden[-1]).squeeze(1)          # (batch,)
 
 
 class LSTMClassifier(nn.Module):
@@ -440,9 +623,10 @@ class LSTMClassifier(nn.Module):
         self.lstm = nn.LSTM(embedding_dim, hidden_size, batch_first=True)
         self.output = nn.Linear(hidden_size, 1)
 
-    def forward(self, token_ids):
+    def forward(self, token_ids, lengths):
         embedded = self.embedding(token_ids)             # (batch, length, 64)
-        _, (hidden, _) = self.lstm(embedded)
+        packed = pack_embeddings(embedded, lengths)
+        _, (hidden, _) = self.lstm(packed)
         return self.output(hidden[-1]).squeeze(1)         # (batch,)
 
 
@@ -453,9 +637,10 @@ class GRUClassifier(nn.Module):
         self.gru = nn.GRU(embedding_dim, hidden_size, batch_first=True)
         self.output = nn.Linear(hidden_size, 1)
 
-    def forward(self, token_ids):
+    def forward(self, token_ids, lengths):
         embedded = self.embedding(token_ids)
-        _, hidden = self.gru(embedded)
+        packed = pack_embeddings(embedded, lengths)
+        _, hidden = self.gru(packed)
         return self.output(hidden[-1]).squeeze(1)
 
 
@@ -472,40 +657,58 @@ class CNN1DClassifier(nn.Module):
             nn.Linear(128, 1),
         )
 
-    def forward(self, token_ids):
+    def forward(self, token_ids, lengths):
         embedded = self.embedding(token_ids).transpose(1, 2)  # (batch, 64, length)
         features = torch.relu(self.conv(embedded))
+        valid_widths = (lengths.to(features.device) - self.conv.kernel_size[0] + 1)
+        valid_widths = valid_widths.clamp(min=1, max=features.shape[2])
+        positions = torch.arange(features.shape[2], device=features.device)[None, :]
+        padded_positions = positions >= valid_widths[:, None]
+        features = features.masked_fill(
+            padded_positions[:, None, :], torch.finfo(features.dtype).min,
+        )
         pooled = self.pool(features).squeeze(2)
         return self.classifier(pooled).squeeze(1)              # (batch,)
 
 
-lstm_classifier = LSTMClassifier(hidden_size=64).to(DEVICE)
-gru_classifier = GRUClassifier(hidden_size=64).to(DEVICE)
-cnn_classifier = CNN1DClassifier().to(DEVICE)
-sample_tokens, _ = next(iter(text_train_loader))
+sample_tokens, sample_lengths, _ = next(iter(text_train_loader))
+shape_models = {
+    "RNN": RNNClassifier(hidden_size=64).to(DEVICE),
+    "GRU": GRUClassifier(hidden_size=64).to(DEVICE),
+    "LSTM": LSTMClassifier(hidden_size=64).to(DEVICE),
+    "1D-CNN": CNN1DClassifier().to(DEVICE),
+}
 with torch.no_grad():
     print("Вход:", tuple(sample_tokens.shape))
-    print("Выход LSTM:", tuple(lstm_classifier(sample_tokens.to(DEVICE)).shape))
-    print("Выход GRU:", tuple(gru_classifier(sample_tokens.to(DEVICE)).shape))
-    print("Выход CNN:", tuple(cnn_classifier(sample_tokens.to(DEVICE)).shape))"""))
+    for model_name, model in shape_models.items():
+        logits = model(sample_tokens.to(DEVICE), sample_lengths)
+        assert logits.shape == (sample_tokens.shape[0],)
+        print(f"Выход {model_name}:", tuple(logits.shape))
+del shape_models"""))
 
 nb.add(md("""### Обучение, выбор по validation и измеренное сравнение
 
-Для LSTM и GRU сравниваются `hidden_size=32` и `hidden_size=64`. Выбор делается
-только по локальной validation accuracy (при равенстве — по validation loss), а
-локальный test используется один раз для выбранных моделей. Все три части
-получены из закреплённой подвыборки опубликованного `train`; это не оценка на
-официальном test-сплите. Такой протокол предотвращает подстройку гиперпараметров
-под итоговую локальную выборку."""))
+Vanilla RNN, GRU и LSTM сравниваются при каждом из одинаковых значений
+`hidden_size=32/64`. Совпадают embedding size, batch size, восемь эпох, Adam,
+loss и порядок train-объектов. Перед созданием каждого кандидата устанавливается
+один и тот же seed, поэтому начальная матрица Embedding одинакова и эффект
+`hidden_size` не смешивается с её инициализацией.
+
+Сначала по локальной validation accuracy/loss выбираются hidden size внутри
+каждой архитектуры и общий победитель среди рекуррентных моделей и 1D-CNN. Код
+печатает и сохраняет этот выбор **до первого обращения к test**. Затем каждый
+кандидат ровно один раз оценивается на локальном test только для отчётной
+таблицы; эти значения не меняют выбор. Все части получены из закреплённой
+подвыборки опубликованного `train`, а не из официального test-сплита."""))
 nb.add(sol("""@torch.inference_mode()
 def evaluate_classifier(model, loader):
     model.eval()
     criterion = nn.BCEWithLogitsLoss(reduction="sum")
     total_loss, total_correct, total_items = 0.0, 0, 0
-    for inputs, targets in loader:
+    for inputs, lengths, targets in loader:
         inputs = inputs.to(DEVICE, non_blocking=True)
         targets = targets.to(DEVICE, non_blocking=True)
-        logits = model(inputs)
+        logits = model(inputs, lengths)
         total_loss += criterion(logits, targets).item()
         total_correct += ((logits >= 0) == targets.bool()).sum().item()
         total_items += targets.numel()
@@ -523,11 +726,11 @@ def train_classifier(model, train_loader, val_loader, epochs=8, learning_rate=1e
     for epoch in range(1, epochs + 1):
         model.train()
         running_loss, seen = 0.0, 0
-        for inputs, targets in train_loader:
+        for inputs, lengths, targets in train_loader:
             inputs = inputs.to(DEVICE, non_blocking=True)
             targets = targets.to(DEVICE, non_blocking=True)
             optimizer.zero_grad(set_to_none=True)
-            loss = criterion(model(inputs), targets)
+            loss = criterion(model(inputs, lengths), targets)
             loss.backward()
             optimizer.step()
             running_loss += loss.item() * targets.numel()
@@ -546,11 +749,22 @@ def train_classifier(model, train_loader, val_loader, epochs=8, learning_rate=1e
 
 candidate_models = {}
 candidate_rows = []
-for architecture, model_class in [("LSTM", LSTMClassifier), ("GRU", GRUClassifier)]:
+TEXT_MODEL_INIT_SEED = SEED + 100
+initial_embedding_weights = None
+recurrent_model_classes = [
+    ("RNN", RNNClassifier),
+    ("GRU", GRUClassifier),
+    ("LSTM", LSTMClassifier),
+]
+for architecture, model_class in recurrent_model_classes:
     for hidden_size in (32, 64):
-        seed_offset = hidden_size + (0 if architecture == "LSTM" else 100)
-        torch.manual_seed(SEED + seed_offset)
+        torch.manual_seed(TEXT_MODEL_INIT_SEED)
         model = model_class(hidden_size=hidden_size).to(DEVICE)
+        current_embedding = model.embedding.weight.detach().cpu()
+        if initial_embedding_weights is None:
+            initial_embedding_weights = current_embedding.clone()
+        else:
+            assert torch.equal(current_embedding, initial_embedding_weights)
         print(f"{architecture}, hidden_size={hidden_size}")
         text_train_loader.generator.manual_seed(SEED)
         result = train_classifier(model, text_train_loader, text_val_loader)
@@ -562,25 +776,79 @@ for architecture, model_class in [("LSTM", LSTMClassifier), ("GRU", GRUClassifie
         })
 
 candidate_results = pd.DataFrame(candidate_rows)
-selected_rows = []
-for architecture in ("LSTM", "GRU"):
+selected_keys = {}
+validation_rows = []
+for architecture, _ in recurrent_model_classes:
     architecture_rows = candidate_results[candidate_results["модель"] == architecture]
     best_index = architecture_rows.sort_values(
         ["val_accuracy", "val_loss"], ascending=[False, True]
     ).index[0]
-    best_row = candidate_results.loc[best_index].to_dict()
-    hidden_size = int(best_row["hidden_size"])
-    model = candidate_models[(architecture, hidden_size)]
-    test_loss, test_accuracy = evaluate_classifier(model, text_test_loader)
-    best_row.update({"test_loss": test_loss, "test_accuracy": test_accuracy})
-    selected_rows.append(best_row)
+    hidden_size = int(candidate_results.loc[best_index, "hidden_size"])
+    selected_keys[architecture] = (architecture, hidden_size)
+    validation_rows.append(candidate_results.loc[best_index].to_dict())
 
-torch.manual_seed(SEED + 250)
+torch.manual_seed(TEXT_MODEL_INIT_SEED)
 cnn_classifier = CNN1DClassifier().to(DEVICE)
+assert torch.equal(
+    cnn_classifier.embedding.weight.detach().cpu(), initial_embedding_weights,
+)
 print("1D-CNN")
 text_train_loader.generator.manual_seed(SEED)
 cnn_result = train_classifier(cnn_classifier, text_train_loader, text_val_loader)
-cnn_test_loss, cnn_test_accuracy = evaluate_classifier(cnn_classifier, text_test_loader)
+validation_rows.append({
+    "модель": "1D-CNN",
+    "hidden_size": np.nan,
+    **cnn_result,
+})
+
+validation_comparison = pd.DataFrame(validation_rows)
+validation_winner = validation_comparison.sort_values(
+    ["val_accuracy", "val_loss"], ascending=[False, True]
+).iloc[0].copy()
+winner_hidden = (
+    ""
+    if pd.isna(validation_winner["hidden_size"])
+    else f", hidden_size={int(validation_winner['hidden_size'])}"
+)
+print("\\nValidation-финалисты до обращения к test:")
+print(validation_comparison.to_string(
+    index=False, float_format=lambda value: f"{value:.4f}",
+))
+print(
+    "\\nВЫБОР ЗАФИКСИРОВАН ДО TEST:",
+    f"{validation_winner['модель']}{winner_hidden}",
+    f"(val_accuracy={validation_winner['val_accuracy']:.4f}, "
+    f"val_loss={validation_winner['val_loss']:.4f})",
+)"""))
+
+nb.add(md("""### Финальный test-блок классификации
+
+Общий победитель среди validation-выбранных RNN, GRU, LSTM и обученной 1D-CNN
+уже зафиксирован выше. Только теперь test используется по одному разу для
+отчётных метрик всех кандидатов; повторный выбор запрещён."""))
+nb.add(sol("""# Только после фиксации выбора вычисляем test-метрики.
+candidate_results["test_loss"] = np.nan
+candidate_results["test_accuracy"] = np.nan
+for index, row in candidate_results.iterrows():
+    key = (row["модель"], int(row["hidden_size"]))
+    test_loss, test_accuracy = evaluate_classifier(
+        candidate_models[key], text_test_loader,
+    )
+    candidate_results.loc[index, ["test_loss", "test_accuracy"]] = [
+        test_loss, test_accuracy,
+    ]
+cnn_test_loss, cnn_test_accuracy = evaluate_classifier(
+    cnn_classifier, text_test_loader,
+)
+
+selected_rows = []
+for architecture, _ in recurrent_model_classes:
+    _, hidden_size = selected_keys[architecture]
+    selected_row = candidate_results[
+        (candidate_results["модель"] == architecture)
+        & (candidate_results["hidden_size"] == hidden_size)
+    ].iloc[0]
+    selected_rows.append(selected_row.to_dict())
 selected_rows.append({
     "модель": "1D-CNN",
     "hidden_size": np.nan,
@@ -595,31 +863,37 @@ metric_note = (
     else "ДЕМОНСТРАЦИОННАЯ МЕТРИКА НА СИНТЕТИЧЕСКИХ ТЕКСТАХ"
 )
 print("\\n" + metric_note)
-print("\\nКандидаты LSTM/GRU (выбор только по validation):")
-print(candidate_results.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
+print("\\nRNN/GRU/LSTM × hidden_size 32/64 (выбор уже зафиксирован по validation):")
+recurrent_table = candidate_results.sort_values(["hidden_size", "модель"])
+print(recurrent_table.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
 text_results = pd.DataFrame(selected_rows)
-print("\\nВыбранные LSTM/GRU и 1D-CNN:")
+print("\\nValidation-выбранные RNN/GRU/LSTM и 1D-CNN:")
 print(text_results.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
-validation_winner = text_results.sort_values(
-    ["val_accuracy", "val_loss"], ascending=[False, True]
-).iloc[0]
 print(
-    "Выбор по validation:", validation_winner["модель"],
+    "Неизменный выбор по validation:",
+    f"{validation_winner['модель']}{winner_hidden}",
     f"(val_accuracy={validation_winner['val_accuracy']:.4f})",
 )
-print("Test приведён только для итоговой оценки и не меняет этот выбор.")
+print("Test вычислен после фиксации и не меняет выбор или гиперпараметры.")
 if not USE_RU_REVIEWS:
     print("Эти accuracy нельзя выдавать за качество на реальных отзывах.")
 else:
     print("Локальный test получен из train и не является official test набора.")
 
+comparison_labels = [
+    model_name if pd.isna(hidden_size) else f"{model_name}({int(hidden_size)})"
+    for model_name, hidden_size in zip(
+        text_results["модель"], text_results["hidden_size"]
+    )
+]
 figure, axes = plt.subplots(1, 2, figsize=(11, 4))
-axes[0].bar(text_results["модель"], text_results["val_accuracy"])
+axes[0].bar(comparison_labels, text_results["val_accuracy"])
 axes[0].set(title="Validation accuracy", ylabel="accuracy", ylim=(0, 1))
-axes[1].bar(text_results["модель"], text_results["seconds"])
+axes[1].bar(comparison_labels, text_results["seconds"])
 axes[1].set(title="Время обучения", ylabel="секунды")
 for axis in axes:
     axis.grid(axis="y", alpha=0.3)
+    axis.tick_params(axis="x", rotation=20)
 plt.tight_layout()
 plt.show()"""))
 
@@ -627,10 +901,12 @@ nb.add(md("""`Conv1d(kernel_size=5)` ищет локальные признак�
 5-граммы, а `AdaptiveMaxPool1d(1)` выбирает максимальный отклик каждого фильтра
 по всему тексту. CNN хорошо параллелится, но на малом наборе накладные расходы
 могут сделать её не быстрее рекуррентных моделей, поэтому используется
-измеренное время из таблицы. LSTM хранит отдельно скрытое состояние и состояние
-ячейки; GRU объединяет память компактнее и обычно имеет меньше параметров. Выбор
-фиксируется по validation accuracy/loss до просмотра test; возможное преимущество
-другой модели на локальном test не используется для повторной настройки.
+измеренное время из таблицы. Vanilla RNN использует один негейтированный переход
+с `tanh`; GRU добавляет reset/update-гейты, а LSTM хранит отдельно скрытое
+состояние и состояние ячейки и использует три гейта. При одинаковом hidden size
+это отражается в числе параметров и времени. Выбор фиксируется по validation
+accuracy/loss до просмотра test; возможное преимущество другой модели на
+локальном test не используется для повторной настройки.
 Синтетический режим проверяет реализацию, но не заменяет эксперимент на данных."""))
 
 # === Часть В. Jena Climate ===
@@ -770,7 +1046,8 @@ nb.add(md("""### Наивный бейзлайн
 
 Для прогноза на 24 часа вперёд бейзлайн повторяет последнюю доступную температуру,
 то есть температуру ровно за сутки до целевого момента. Это честный ориентир:
-модель полезна только тогда, когда её MAE меньше."""))
+модель полезна только тогда, когда её MAE меньше. До обучения и validation-выбора
+вычисляем только validation MAE; test-бейзлайн остаётся закрытым."""))
 nb.add(sol("""@torch.inference_mode()
 def evaluate_naive(loader):
     absolute_error, count = 0.0, 0
@@ -783,9 +1060,9 @@ def evaluate_naive(loader):
 
 temperature_scale = float(train_std[temperature_index])
 naive_val_mae = evaluate_naive(val_jena_loader)
-naive_test_mae = evaluate_naive(test_jena_loader)
-print(f"Naive val  normalized MAE: {naive_val_mae:.4f} ({naive_val_mae * temperature_scale:.3f} °C)")
-print(f"Naive test normalized MAE: {naive_test_mae:.4f} ({naive_test_mae * temperature_scale:.3f} °C)")"""))
+print(f"Naive val normalized MAE: {naive_val_mae:.4f} "
+      f"({naive_val_mae * temperature_scale:.3f} °C)")
+print("Naive test MAE пока не вычисляется.")"""))
 
 nb.add(md("""### LSTM(16) и LSTM(32) с recurrent dropout
 
@@ -913,7 +1190,7 @@ with torch.no_grad():
         tuple(lstm_dropout_forecaster(shape_batch.to(DEVICE)).shape),
     )"""))
 
-nb.add(md("### Реальное обучение и итоговые MAE"))
+nb.add(md("### Обучение и фиксация выбора по validation"))
 nb.add(sol("""print("Обучение LSTM(16)")
 torch.manual_seed(SEED + 500)
 train_jena_loader.generator.manual_seed(SEED)
@@ -926,8 +1203,36 @@ lstm_dropout_seconds = train_forecaster(
 )
 
 lstm_val_mae = evaluate_forecaster(lstm_forecaster, val_jena_loader)
-lstm_test_mae = evaluate_forecaster(lstm_forecaster, test_jena_loader)
 lstm_dropout_val_mae = evaluate_forecaster(lstm_dropout_forecaster, val_jena_loader)
+
+jena_validation_results = pd.DataFrame([
+    {"модель": "Naive last temperature", "val normalized MAE": naive_val_mae},
+    {"модель": "LSTM(16)", "val normalized MAE": lstm_val_mae},
+    {
+        "модель": "LSTM(32, recurrent_dropout=0.25)",
+        "val normalized MAE": lstm_dropout_val_mae,
+    },
+])
+jena_validation_winner = jena_validation_results.sort_values(
+    "val normalized MAE", ascending=True,
+).iloc[0].copy()
+print("\\nValidation-таблица до обращения к test:")
+print(jena_validation_results.to_string(
+    index=False, float_format=lambda value: f"{value:.4f}",
+))
+print(
+    "ВЫБОР JENA ЗАФИКСИРОВАН ДО TEST:",
+    jena_validation_winner["модель"],
+    f"(val normalized MAE={jena_validation_winner['val normalized MAE']:.4f})",
+)"""))
+
+nb.add(md("""### Финальный test-блок Jena
+
+Победитель среди наивного бейзлайна и обеих LSTM уже зафиксирован по validation.
+Теперь test MAE вычисляется по одному разу для всех трёх строк и не используется
+для повторной настройки или выбора."""))
+nb.add(sol("""naive_test_mae = evaluate_naive(test_jena_loader)
+lstm_test_mae = evaluate_forecaster(lstm_forecaster, test_jena_loader)
 lstm_dropout_test_mae = evaluate_forecaster(lstm_dropout_forecaster, test_jena_loader)
 
 jena_results = pd.DataFrame([
