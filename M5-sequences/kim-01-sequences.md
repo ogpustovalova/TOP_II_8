@@ -31,7 +31,7 @@
   обязательной рекуррентной части Б используется PyTorch (`nn.RNNCell`,
   `nn.RNN`, `nn.GRU`, `nn.LSTM`); инструменты NLP остаются `nltk`, `pymorphy3`
   и Natasha/spaCy/Stanza.
-- **Длительность:** 6 лабораторных часов (≈16 ч с СРС) — см. [РПД](../docs/rpd.md). ⚠️ _Предложено автором ФОС на основе распределения часов в [РПД](../docs/rpd.md); подлежит согласованию._
+- **Длительность:** 6 лабораторных часов (≈16 ч с СРС) — см. [РПД](../docs/rpd.md).
 - **Датасеты:** [`ai-forever/ru-reviews-classification`](https://huggingface.co/datasets/ai-forever/ru-reviews-classification)
   (в метаданных указана Apache-2.0, происхождение текстов требует подтверждения;
   используется только опубликованный `train.jsonl` в revision
