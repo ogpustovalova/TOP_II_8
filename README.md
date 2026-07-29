@@ -10,7 +10,7 @@
 ## Быстрая навигация
 
 - [Рабочая программа дисциплины](docs/rpd.md)
-- [План заполнения репозитория](docs/fill-plan.md)
+- [Документация дисциплины](docs/README.md)
 - [Методические указания](methodical-guidelines/README.md)
 - [Информационные ресурсы](resources/README.md)
 - [Контроль качества репозитория](docs/quality-checklist.md)
@@ -123,7 +123,7 @@ SGD, регуляризация, борьба с переобучением); и
 Полное описание приведено в [РПД](docs/rpd.md).
 
 **Целевые роли КРМ** (из «Модели выпускника» программ УрФУ — см.
-[`docs/urfu-program-facts.md`](docs/urfu-program-facts.md)):
+[`docs/internal/urfu-program-facts.md`](docs/internal/urfu-program-facts.md)):
 
 - **АИИ (09.03.01 «Алгоритмы ИИ»):** ML Engineer, Data Analyst.
 - **ПИИ (09.03.03 «Прикладной ИИ»):** ML Engineer, Data Engineer, MLOps.
@@ -140,7 +140,7 @@ SGD, регуляризация, борьба с переобучением); и
 > проверяемое действие из КИУ; полные редакционно нормализованные формулировки КРМ приведены в
 > [`data/krm-descriptors.md`](data/krm-descriptors.md). Различие между уровнями
 > ФОС и целевым профилем программы пояснено в
-> [`docs/urfu-program-facts.md`](docs/urfu-program-facts.md).
+> [`docs/internal/urfu-program-facts.md`](docs/internal/urfu-program-facts.md).
 > Строки модулей связывают обязательное действие с одним КИУ. Лекционная
 > контрольная и зачёт выборочно агрегируют ранее подтверждённые КИУ и не создают
 > новые практические свидетельства; проект подтверждает только КИУ, явно
@@ -160,7 +160,7 @@ SGD, регуляризация, борьба с переобучением); и
 | 5 | [Модуль 5. НС для последовательностей](M5-sequences/README.md) | DL-4. Обработка естественного языка | DL-4.1 | Б | Применяет regex, токенизацию, морфологический и синтаксический анализ | Текущая | [КИМ 5.1](M5-sequences/kim-01-sequences.md) | [ресурсы](resources/datasets/README.md) |
 | 6 | [Модуль 6. Автокодировщики](M6-autoencoders/README.md) | DL-1 | DL-1.7 | Б | Строит и обучает AE/VAE для восстановления, поиска аномалий и генерации данных | Текущая | [КИМ 6.1](M6-autoencoders/kim-01-autoencoders.md) | [ресурсы](resources/datasets/README.md) |
 | 7 | [Модуль 7. Алгоритмы обучения НС](M7-optimizers/README.md) | DL-1 | DL-1.1 | Вклад в С | Выбирает initial `lr` по validation для задачи, данных и архитектуры; сравнивает планировщик и проверяет устойчивость на нескольких seed | Текущая | [КИМ 7.1](M7-optimizers/kim-01-optimizers.md) | [ресурсы](resources/software/python-libs/README.md) |
-| 2+7 | [Составной результат M2 + M7](docs/kiu-coverage.md) | DL-1 | DL-1.1 | С | Выбирает `lr`, loss и `batch_size`, применяет регуляризацию и Dropout, объясняет градиентный спуск; подтверждается только при прохождении обоих некомпенсируемых шлюзов | Текущая | [КИМ 2.1](M2-training/kim-01-backprop-training.md) + [КИМ 7.1](M7-optimizers/kim-01-optimizers.md) | [ресурсы](resources/software/python-libs/README.md) |
+| 2+7 | [Составной результат M2 + M7](docs/internal/kiu-coverage.md) | DL-1 | DL-1.1 | С | Выбирает `lr`, loss и `batch_size`, применяет регуляризацию и Dropout, объясняет градиентный спуск; подтверждается только при прохождении обоих некомпенсируемых шлюзов | Текущая | [КИМ 2.1](M2-training/kim-01-backprop-training.md) + [КИМ 7.1](M7-optimizers/kim-01-optimizers.md) | [ресурсы](resources/software/python-libs/README.md) |
 | 8 | [Рубежный срез К1](Lecture-control/README.md) | DL-1 | DL-1.1; DL-1.2 | Б | Проверяет объяснение обучения сети, расчёт параметров и градиентов, анализ качества MLP | Рубежная (лекции) | [КИМ «Лекционная контрольная»](Lecture-control/kim-lecture-control.md) | [банк](resources/test-banks/README.md) |
 | 9 | [Рубежный срез К2](Lecture-control/README.md) | DL-1; DL-3; DL-4 | Выборка ранее подтверждённых индикаторов модулей 4–7 | Б | Выборочно проверяет объяснение и расчёт архитектур, диагностику решений для изображений, последовательностей и генеративных моделей | Рубежная (лекции) | [КИМ «Лекционная контрольная»](Lecture-control/kim-lecture-control.md) | [банк](resources/test-banks/README.md) |
 | 10 | [Проектная работа](Project/README.md) | Зависит от варианта | Один или несколько допустимых для выбранного варианта индикаторов | Б | Подтверждает только те базовые КИУ, для которых в согласованном плане указаны обязательный артефакт и критерий приемки | Рубежная (проект) | [КИМ «Проект»](Project/kim-project.md) | [ресурсы](resources/README.md) |
@@ -225,7 +225,7 @@ SGD, регуляризация, борьба с переобучением); и
 фиксируются раздельно.
 
 Оценивание ведётся по **единой 100-балльной шкале БРС УрФУ** (см.
-[`docs/urfu-program-facts.md`](docs/urfu-program-facts.md)): Высокий (В) — 80–100
+[`docs/internal/urfu-program-facts.md`](docs/internal/urfu-program-facts.md)): Высокий (В) — 80–100
 («отлично»), Средний (С) — 60–79 («хорошо»), Пороговый (П) — 40–59
 («удовлетворительно»), Недостаточный (Н) — < 40 («неудовлетворительно»). Порог
 зачёта — 40 баллов. Диапазон 40–59 является положительным и не требует
@@ -236,7 +236,7 @@ SGD, регуляризация, борьба с переобучением); и
 - [Рекомендации обучающимся](methodical-guidelines/students/README.md);
 - [Рекомендации преподавателям по оцениванию](methodical-guidelines/teachers-assessment/README.md);
 - [Рекомендации преподавателям по использованию ресурсов](methodical-guidelines/teachers-resources/README.md);
-- [матрица покрытия КИУ](docs/kiu-coverage.md).
+- [матрица покрытия КИУ](docs/internal/kiu-coverage.md).
 
 ## 6. Структура репозитория
 

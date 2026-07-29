@@ -5,7 +5,6 @@
 | Файл | Назначение |
 |---|---|
 | [rpd.md](rpd.md) | рабочая программа дисциплины «Основы нейронных сетей» |
-| [fill-plan.md](fill-plan.md) | план заполнения репозитория ФОС |
-| [kim-format-options.md](kim-format-options.md) | варианты формата КИМ (выбран гибридный) |
 | [quality-checklist.md](quality-checklist.md) | проверка готовности репозитория к публикации |
-| [validation-report.md](validation-report.md) | результаты содержательной и технической валидации репозитория |
+
+Служебные материалы для сопровождающих: [internal/README.md](internal/README.md).

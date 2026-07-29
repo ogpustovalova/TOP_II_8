@@ -6,7 +6,7 @@
 ## 1. Шкала и пороги
 
 Оценивание ведётся по **единой 100-балльной шкале БРС УрФУ** (см.
-[`docs/urfu-program-facts.md`](../../docs/urfu-program-facts.md); шкала
+[`docs/internal/urfu-program-facts.md`](../../docs/internal/urfu-program-facts.md); шкала
 единообразна во всех ФОС УНЦ «ИИ»):
 
 | Уровень | Баллы | Традиционная оценка | Зачёт | Качественный уровень |
