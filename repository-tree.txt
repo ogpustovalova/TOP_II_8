@@ -5,19 +5,21 @@
 │   ├── krm-descriptors.md
 │   └── krm-v3.0.xlsx
 ├── docs/
-│   ├── cache-documentation.md
 │   ├── README.md
-│   ├── filled-vs-invented.md
-│   ├── fill-plan.md
-│   ├── kim-format-options.md
-│   ├── kiu-coverage.md
-│   ├── maintenance-progress.md
-│   ├── next-session-plan.md
 │   ├── quality-checklist.md
-│   ├── reference-access-policy.md
 │   ├── rpd.md
-│   ├── urfu-program-facts.md
-│   └── validation-report.md
+│   └── internal/
+│       ├── README.md
+│       ├── cache-documentation.md
+│       ├── fill-plan.md
+│       ├── filled-vs-invented.md
+│       ├── kim-format-options.md
+│       ├── kiu-coverage.md
+│       ├── maintenance-progress.md
+│       ├── next-session-plan.md
+│       ├── reference-access-policy.md
+│       ├── urfu-program-facts.md
+│       └── validation-report.md
 ├── environment.yml
 ├── Exam/
 │   ├── README.md
