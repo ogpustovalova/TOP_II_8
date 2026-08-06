@@ -1,0 +1,75 @@
+name: Validate repository
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Links, lint, notebooks integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install nbformat
+
+      - name: Repository validator (syntax, links, notebook schema, execution marks)
+        run: |
+          # Python-синтаксис, nbformat schema, синтаксис code-ячеек,
+          # отсутствие error outputs, execution_count эталонов,
+          # локальные Markdown-ссылки, чувствительные данные, состав notebooks.
+          python tools/validate_repository.py
+
+      - name: Markdown lint
+        run: |
+          python tools/lint_markdown.py
+
+      - name: Notebook integrity summary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import nbformat
+          root = Path(".")
+          solutions = sorted(root.rglob("*solution*.ipynb"))
+          print(f"Эталонных notebooks: {len(solutions)}")
+          for nb_path in solutions:
+              nb = nbformat.read(nb_path.open(encoding="utf-8"), as_version=nbformat.NO_CONVERT)
+              code = [c for c in nb.cells if c.cell_type == "code"]
+              executed = [c for c in code if c.execution_count is not None]
+              errors = [
+                  o for c in code for o in c.get("outputs", [])
+                  if o.get("output_type") == "error"
+              ]
+              status = "OK" if len(executed) == len(code) and not errors else "FAIL"
+              print(
+                  f"  {status}: {nb_path}: "
+                  f"executed {len(executed)}/{len(code)}, errors={len(errors)}"
+              )
+              if status != "OK":
+                  raise SystemExit(1)
+          print(
+              "Полный GPU-прогон эталонов выполняется локально в environment.yml; "
+              "CI проверяет целостность outputs и execution_count."
+          )
+          PY
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "CI: validate_repository.py + lint_markdown.py + integrity эталонов"
+          echo "Внешние URL: python tools/validate_repository.py --check-external"
+          echo "Полный re-run ноутбуков: локально (GPU/данные)"
