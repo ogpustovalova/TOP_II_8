@@ -5,12 +5,15 @@
 устная защита лабораторных и проекта отдельно проверяет понимание собственного
 кода и самостоятельность.
 
+**Самопроверка (не в баллах):** [квизы по модулям M1–M7](self-check-quizzes.md)
+с ключами — для диагностики перед лабораторными и К1/К2.
+
 ## Готовый рубежный КИМ
 
 | Срез | Темы | Варианты | Ключи |
 |---|---|---|---|
-| К1 | Модули 1–3: основы, backprop и MLP | [3 варианта](../../Lecture-control/attachments/k1-variants.md) | [ожидаемые ответы](../../Lecture-control/attachments/k1-keys.md) |
-| К2 | Модули 4–7: CNN, последовательности, AE/VAE и оптимизация | [3 варианта](../../Lecture-control/attachments/k2-variants.md) | [ожидаемые ответы](../../Lecture-control/attachments/k2-keys.md) |
+| К1 | Модули 1–3: основы, backprop и MLP | [10 вариантов](../../Lecture-control/attachments/k1-variants.md) | [ожидаемые ответы](../../Lecture-control/attachments/k1-keys.md) |
+| К2 | Модули 4–7: CNN, последовательности, AE/VAE, attention и оптимизация | [10 вариантов](../../Lecture-control/attachments/k2-variants.md) | [ожидаемые ответы](../../Lecture-control/attachments/k2-keys.md) |
 
 Условия проведения, формула `К = (К1 + К2) / 2` и правила пересдачи приведены в
 [КИМ «Лекционная контрольная»](../../Lecture-control/kim-lecture-control.md),
